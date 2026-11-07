@@ -48,3 +48,7 @@ docker build -t nuniflix .
 
 Every push to the main branch builds and publishes `ghcr.io/gitnuni/nuniflix` through GitHub Actions
 (`.github/workflows/docker.yml`).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
