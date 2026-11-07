@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>NuniFlix</Name>
+  <Repository>ghcr.io/gitnuni/nuniflix:latest</Repository>
+  <Registry>https://github.com/GitNuni/NuniFlix/pkgs/container/nuniflix</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/GitNuni/NuniFlix/issues</Support>
+  <Project>https://github.com/GitNuni/NuniFlix</Project>
+  <Overview>Movie and TV requests for Plex and Jellyfin households: browse what's streaming, request things, and Radarr/Sonarr fetch them. Includes Swipe, Movie Match, Wrapped, notifications and the Office (a little pixel-art building showing what's being watched and downloaded). Everything is set up in the first-run wizard: the one-time setup code is printed in this container's log.</Overview>
+  <Category>MediaServer:Video Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <Icon>https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/overseerr.png</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <Config Name="Web UI port" Target="8000" Default="8095" Mode="tcp" Description="The port you open NuniFlix on." Type="Port" Display="always" Required="true" Mask="false">8095</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/nuniflix" Mode="rw" Description="Settings, accounts and the database. Back this up." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/nuniflix</Config>
+</Container>
