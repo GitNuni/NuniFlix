@@ -214,6 +214,74 @@ def login_discord_check(body: DiscordCheck, request: Request):
     return signed_in(request, user, body.device or "Web", ident["id"])
 
 
+# ---------- TV sign-in ----------
+# Typing a password on a TV remote is miserable: the TV shows a short code (and a QR code), the person opens
+# NuniFlix on their phone, already signed in, and approves it. The TV then gets its own session.
+_tv, _tv_lock = {}, threading.Lock()  # code -> {"state", "t", "user"}
+TV_ALPHA, TV_TTL = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 600
+
+
+def _tv_code(code):
+    return re.sub(r"[^A-Z0-9]", "", (code or "").upper())[:8]
+
+
+@app.post("/api/auth/tv/start")
+def tv_start(request: Request):
+    with _tv_lock:
+        now = time.time()
+        for k in [k for k, v in _tv.items() if now - v["t"] > TV_TTL]:
+            del _tv[k]
+        if len(_tv) >= 500:
+            raise HTTPException(429, "Too many sign-ins in progress. Try again in a few minutes.")
+        code = "".join(secrets.choice(TV_ALPHA) for _ in range(6))
+        while code in _tv:
+            code = "".join(secrets.choice(TV_ALPHA) for _ in range(6))
+        state = secrets.token_urlsafe(24)
+        _tv[code] = {"state": state, "t": now, "user": None}
+    base = base_url(request)
+    return {"code": code, "state": state, "url": f"{base}/?tv={code}", "link": f"{base}/?tv", "expires": TV_TTL}
+
+
+class TvCheck(BaseModel):
+    state: str = Field(max_length=100)
+    device: Optional[str] = Field(None, max_length=80)
+
+
+@app.post("/api/auth/tv/check")
+def tv_check(body: TvCheck, request: Request):
+    with _tv_lock:
+        code = next((k for k, v in _tv.items() if secrets.compare_digest(v["state"], body.state)), None)
+        entry = _tv.get(code) if code else None
+        if not entry or time.time() - entry["t"] > TV_TTL:
+            raise HTTPException(410, "That code expired. Getting a new one.")
+        if not entry["user"]:
+            return JSONResponse({"pending": True}, status_code=202)
+        del _tv[code]
+    user = store.q1("select * from users where id=?", (entry["user"],))
+    if not user or user["blocked"]:
+        raise HTTPException(403, "This account is blocked.")
+    return signed_in(request, user, body.device or "Apple TV")
+
+
+class TvApprove(BaseModel):
+    code: str = Field(max_length=20)
+
+
+@app.post("/api/auth/tv/approve")
+def tv_approve(body: TvApprove, request: Request, user=Depends(current_user)):
+    ip = client_ip(request)
+    if accounts.too_many(ip):
+        raise HTTPException(429, "Too many tries. Wait 15 minutes.")
+    code = _tv_code(body.code)
+    with _tv_lock:
+        entry = _tv.get(code)
+        if entry and time.time() - entry["t"] <= TV_TTL and not entry["user"]:
+            entry["user"] = user["id"]
+            return {"ok": True}
+    accounts.failed(ip)
+    raise HTTPException(404, "That code isn't right, or it expired. Check the TV.")
+
+
 # ---------- linking sign-in accounts ----------
 # Same sign-in flows, but the account is attached to whoever is signed in instead of opening its own.
 def _linked(user, ident):

@@ -4621,6 +4621,13 @@ async function start() {
   }
   try { ME = await api("/me", {quiet: true}); } catch { return showLogin(); }
   if ((await api("/setup/status", {quiet: true}).catch(() => ({}))).needed) return showSetup(false);
+  const tvq = new URLSearchParams(location.search);
+  if (tvq.has("tv")) {  // signing in the Apple TV app: it shows a code (and a QR code that lands here)
+    history.replaceState(null, "", "/");
+    const code = (tvq.get("tv") || prompt("Type the code shown on the TV") || "").trim();
+    if (code && confirm(`Sign in the TV (code ${code.toUpperCase()}) as ${ME.name}?`))
+      api("/auth/tv/approve", {body: {code}}).then(() => toast("The TV is signed in.")).catch(e => toast(e.message));
+  }
   if (ME.prefs?.theme && ME.prefs.theme !== theme()) setTheme(ME.prefs.theme, false);
   $("#login").hidden = $("#setup").hidden = true; $("#app").hidden = $("#tabs").hidden = false;
   let s = history.state?.tab ? history.state : {tab: "home", depth: 0};  // a reload stays on the same screen
