@@ -12,6 +12,8 @@
   let cv, ctx, W = 0, H = 0, DPR = 1, parts = [], raf = 0, on = false, season = null, cameo = null, nextCameo = 0, eyes = null, nextEyes = 0, last = 0;
   let light = false, lightAt = 0;  // a light page background: snow is drawn blue-grey instead of white
   const rnd = (a, b) => a + Math.random() * (b - a);
+  // Horror Hours, 10pm–4am: cameos about twice as often, and eyes in the dark whatever the season (?late=1 previews)
+  const late = () => qs.has("late") || (h => h >= 22 || h < 4)(new Date().getHours());
   function checkLight(now) {
     if (now - lightAt < 2000) return;
     lightAt = now;
@@ -206,7 +208,7 @@
     }
     if (!cameo) return;
     const q = (now - cameo.start) / cameo.dur;
-    if (q >= 1) { cameo = null; nextCameo = now + rnd(60000, 120000); return; }
+    if (q >= 1) { cameo = null; nextCameo = now + (late() ? rnd(30000, 60000) : rnd(60000, 120000)); return; }
     const x = cameo.dir > 0 ? -120 + q * (W + 240) : W + 120 - q * (W + 240);
     ctx.save(); ctx.globalAlpha = Math.min(1, q * 8, (1 - q) * 8) * 0.85;
     if (cameo.dir < 0) { ctx.translate(W, 0); ctx.scale(-1, 1); }
@@ -215,11 +217,11 @@
   }
 
   function drawEyes(now) {
-    if (!KIND[season].eyes) return;
+    if (!KIND[season].eyes && !late()) return;
     if (!eyes && now > nextEyes) eyes = {start: now, x: rnd(30, W - 30), y: rnd(60, H * 0.45)};
     if (!eyes) return;
     const q = (now - eyes.start) / 4500;
-    if (q >= 1) { eyes = null; nextEyes = now + rnd(40000, 90000); return; }
+    if (q >= 1) { eyes = null; nextEyes = now + (late() ? rnd(20000, 45000) : rnd(40000, 90000)); return; }
     const blink = q > 0.45 && q < 0.5;  // one blink
     ctx.globalAlpha = blink ? 0 : Math.sin(q * Math.PI) * 0.7;
     eyesAt(eyes.x, eyes.y, 1.8);

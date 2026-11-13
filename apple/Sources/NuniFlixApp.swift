@@ -36,6 +36,15 @@ struct RootView: View {
         }
         .animation(.default, value: model.signedIn)
         .animation(.default, value: model.server)
+        #if os(tvOS)
+        // quick connect: an iPhone on the same network can set this TV up (QuickConnect.swift)
+        .task(id: model.signedIn) {
+            if model.signedIn { QuickConnectTV.shared.stop() } else {
+                QuickConnectTV.shared.onServer = { [weak model] url in if model?.server != url { model?.setServer(url) } }
+                QuickConnectTV.shared.start()
+            }
+        }
+        #endif
     }
 }
 
@@ -61,6 +70,7 @@ struct MainView: View {
                     case .browse(let p, let title, let q): BrowseGridView(provider: p, title: title, query: q)
                     case .section(let p, let title, let type, let cat): SectionPage(provider: p, title: title, type: type, cat: cat)
                     case .yourflix: YourFlixView()
+                    case .seasonal: SeasonalPage()
                     case .library(let genre): LibraryPage(genre: genre)
                     case .libraryAll(let title, let q): BrowseGridView(provider: nil, title: title, query: q)
                     }

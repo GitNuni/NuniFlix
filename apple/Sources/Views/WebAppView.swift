@@ -26,6 +26,7 @@ struct WebAppView: View {
                 }
                 .ignoresSafeArea()
             }
+            QuickConnectOverlay()  // "Set up NuniFlix on Apple TV?" (QuickConnect.swift)
             if loading && failed == nil {
                 ProgressView().controlSize(.large).tint(.white)
             }
@@ -43,6 +44,7 @@ struct WebAppView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .task { QuickConnectPhone.shared.start() }
     }
 }
 

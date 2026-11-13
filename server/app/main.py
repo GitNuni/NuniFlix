@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 import random
 
-import accounts, apns, arr, history, library, media, notify, office, player, store, subtitles, tmdb
+import accounts, apns, arr, history, library, media, notify, office, player, seasonal, store, subtitles, tmdb
 
 VERSION = "0.4.0"
 COOKIE = "nf_token"
@@ -584,6 +584,20 @@ class PlayStart(BaseModel):
 @app.post("/api/play/start")
 def play_start(body: PlayStart, user=Depends(current_user)):
     return player.start(user, body.id, body.offset, body.platform, body.subtitle)
+
+
+# ---------- seasonal horror channel (seasonal.py) ----------
+@app.get("/api/seasonal")
+def seasonal_channel(hour: Optional[int] = Query(None, ge=0, le=23),
+                     season: Optional[Literal["halloween", "fall", "christmas", "winter", "spring", "summer", "autumn"]] = None,
+                     user=Depends(current_user)):
+    """This season's horror channel (31 Nights of Horror, Holiday Horror…). hour: the viewer's local hour, for Horror Hours."""
+    if not tmdb.key():
+        raise HTTPException(400, "Seasonal channels need a TMDB key (Settings).")
+    d = seasonal.channel(user, season, hour)
+    for r in d["rows"]:
+        _overlay_requests(r["items"])
+    return d
 
 
 # ---------- your library (library.py) ----------

@@ -15,6 +15,9 @@ struct ServerView: View {
         VStack(spacing: 30) {
             Text(model.appTheme.uppercase ? "NUNIFLIX" : "NuniFlix").font(model.appTheme.font(64)).foregroundStyle(model.appTheme.brandColor)
             Text("What's your NuniFlix address?").font(.title2)
+            #if os(tvOS)
+            Text("Or open NuniFlix on your iPhone on the same Wi-Fi: it'll offer to set up this TV.").font(.callout).foregroundStyle(.green)
+            #endif
             Text("The same one you open in the browser, like http://192.168.0.49:8095 or https://requests.example.com")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             TextField("http://192.168.0.49:8095", text: $address)
@@ -149,6 +152,7 @@ struct SignInButton: View {
 #if os(tvOS)
 struct TVCodeView: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var quick = QuickConnectTV.shared
     @State private var code: TVCode?
     @State private var error: String?
 
@@ -159,7 +163,13 @@ struct TVCodeView: View {
                     .padding(20).background(.white, in: RoundedRectangle(cornerRadius: 24))
             }
             VStack(alignment: .leading, spacing: 24) {
-                Text("Sign in with your phone").font(.title2.bold())
+                if quick.phoneConnected {
+                    Label("Confirm on your iPhone", systemImage: "iphone.radiowaves.left.and.right").font(.title2.bold()).foregroundStyle(.green)
+                    Text("Your iPhone will ask if it matches this code:").foregroundStyle(.secondary)
+                } else {
+                    Text("Sign in with your phone").font(.title2.bold())
+                    Text("Got NuniFlix on your iPhone? Open it on the same Wi-Fi and it'll offer to set up this TV.").foregroundStyle(.secondary)
+                }
                 Text("Scan the code with your phone's camera, or open this address in NuniFlix on your phone or computer:")
                     .foregroundStyle(.secondary)
                 Text(code?.link ?? " ").font(.title3.monospaced())
@@ -183,6 +193,7 @@ struct TVCodeView: View {
                 let (data, _) = try await API.shared.post("/auth/tv/start")
                 let c: TVCode = try API.shared.decode(data)
                 code = c; error = nil
+                QuickConnectTV.shared.offer(code: c.code)
                 let until = Date().addingTimeInterval(TimeInterval(c.expires - 10))
                 while Date() < until && !Task.isCancelled {
                     try await Task.sleep(for: .seconds(2.5))

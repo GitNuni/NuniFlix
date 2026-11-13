@@ -34,6 +34,7 @@ struct ServicesView: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing)], spacing: Metrics.spacing) {
                     NavigationLink(value: Route.yourflix) { YourFlixTile() }.cardButton()
+                    NavigationLink(value: Route.seasonal) { SeasonalTile() }.cardButton()
                     ForEach(providers) { p in
                         NavigationLink(value: Route.service(p)) { ServiceTile(provider: p) }.cardButton()
                     }
@@ -111,13 +112,82 @@ struct YourFlixTile: View {
     }
 }
 
+/// This season's horror channel (31 Nights of Horror, Holiday Horror…): its pixel-art scene behind the name.
+struct SeasonalTile: View {
+    var body: some View {
+        let s = HolidaySeason.current
+        ZStack(alignment: .bottomLeading) {
+            Color(hex: 0x0B0B12)
+            Picture(url: "/season/\(s.artFolder)/scene.png").opacity(0.85)
+            LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(s.channelName).font(.headline.weight(.heavy)).foregroundStyle(.white).lineLimit(2)
+                Text(HolidaySeason.horrorHours ? "Horror Hours" : "Seasonal horror").font(.caption).foregroundStyle(.red.opacity(0.9))
+            }
+            .padding(14)
+        }
+        .frame(width: Metrics.serviceTile.width, height: Metrics.serviceTile.height)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// The seasonal channel: rows of themed horror, "Horror on Plex" from your own library, and late at night short horror.
+struct SeasonalPage: View {
+    @EnvironmentObject var model: AppModel
+    @State private var page: Channel?
+    @State private var error: String?
+
+    struct Channel: Decodable { var title: String; var subtitle: String?; var art: String?; var hero: Item?; var rows: [Row]; var late: Bool? }
+
+    var theme: ServiceTheme { ServiceTheme.app("horror") }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Metrics.spacing) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text((page?.title ?? HolidaySeason.current.channelName).uppercased()).font(theme.font(Metrics.rowTitleSize * 1.8)).foregroundStyle(theme.brandColor)
+                    if let sub = page?.subtitle { Text(sub).foregroundStyle(.secondary) }
+                    if page?.late == true { Label("Horror Hours", systemImage: "moon.stars.fill").font(.callout).foregroundStyle(.red) }
+                }
+                .padding(.horizontal, Metrics.gutter)
+                if let error {
+                    ErrorView(message: error) { Task { await load() } }
+                } else if let page {
+                    if let hero = page.hero { Hero(item: hero, theme: theme) }
+                    ForEach(page.rows) { row in ItemRow(title: row.title, theme: theme, items: row.items) }
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 400)
+                }
+            }
+            .padding(.vertical, Metrics.spacing)
+        }
+        .background(theme.backgroundView)
+        .onAppear { model.theme = theme }
+        .task { if page == nil { await load() } }
+    }
+
+    private func load() async {
+        error = nil
+        var q = ["hour": String(Calendar.current.component(.hour, from: Date()))]
+        #if DEBUG
+        if let s = ProcessInfo.processInfo.environment["NF_SEASON"] { q["season"] = s }
+        #endif
+        do { page = try await API.shared.get("/seasonal", q) }
+        catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+    }
+}
+
 /// YourFlix, your own channel: continue watching, your requests (ready, on the way, waiting), then a door into
 /// your Plex/Jellyfin library and its genres.
 struct YourFlixView: View {
     @EnvironmentObject var model: AppModel
     @State private var requests: [MyRequest] = []
     @State private var lib: RowsPage?
+    @State private var forYou: [ForYouRow] = []
     @State private var loaded = false
+
+    struct ForYouRow: Decodable, Identifiable { var title: String; var items: [Item]; var id: String { title } }
+    struct ForYou: Decodable { var rows: [ForYouRow] }
     @State private var error: String?
 
     var theme: ServiceTheme { var t = model.appTheme; t.tile = .poster; return t }
@@ -161,6 +231,9 @@ struct YourFlixView: View {
                     ForEach(rows, id: \.0) { title, list in
                         ItemRow(title: "\(title)  ·  \(list.count)", theme: theme, items: list)
                     }
+                    ForEach(forYou) { row in  // "Because you watched…", from your own watch history
+                        ItemRow(title: row.title, theme: theme, items: row.items)
+                    }
                     if rows.isEmpty && lib == nil {
                         Text("Nothing requested yet. Find something on a service and choose Request.")
                             .foregroundStyle(.secondary).padding(.horizontal, Metrics.gutter)
@@ -194,7 +267,9 @@ struct YourFlixView: View {
     private func load() async {
         async let reqs: Requests? = try? API.shared.get("/requests", ["scope": "mine"])
         async let library: RowsPage? = try? API.shared.get("/library/rows")  // nil when no Plex/Jellyfin is linked
-        let (r, l) = await (reqs, library)
+        async let fy: ForYou? = try? API.shared.get("/home/foryou")
+        let (r, l, f) = await (reqs, library, fy)
+        forYou = f?.rows ?? []
         if let r { requests = r.requests; error = nil } else if !loaded && l == nil { error = "Couldn't load YourFlix. Try again." }
         lib = l
         loaded = true

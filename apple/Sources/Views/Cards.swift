@@ -205,6 +205,7 @@ enum Route: Hashable {
     case library(String?)                              // your Plex/Jellyfin, or one genre of it
     case libraryAll(String, [String: String])          // everything in it (grid): title + query (type/genre)
     case yourflix
+    case seasonal
 }
 
 struct ErrorView: View {

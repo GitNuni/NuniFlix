@@ -93,6 +93,27 @@ enum HolidaySeason: String {
         }
     }
 
+    /// The seasonal channel's name (server: seasonal.py CHANNELS).
+    var channelName: String {
+        switch self {
+        case .halloween: return "31 Nights of Horror"
+        case .fall: return "Harvest of Horror"
+        case .christmas: return "Holiday Horror"
+        case .winter: return "Cabin Fever"
+        case .spring: return "Folk Horror Spring"
+        case .summer: return "Summer Camp Slashers"
+        case .autumn: return "Back to School Scares"
+        }
+    }
+    /// Where its pixel art lives on the server (September borrows the fall art).
+    var artFolder: String { self == .autumn ? "fall" : rawValue }
+
+    /// 10pm–4am: cameos twice as often, and eyes in the dark in every season.
+    static var horrorHours: Bool {
+        let h = Calendar.current.component(.hour, from: Date())
+        return h >= 22 || h < 4
+    }
+
     private enum Kind { case leaf, snow, petal, fly }
     private var kind: Kind {
         switch self {
@@ -121,7 +142,7 @@ enum HolidaySeason: String {
         default: return nil
         }
     }
-    private var eyes: Bool { self == .christmas || self == .halloween }
+    private var eyes: Bool { self == .christmas || self == .halloween || Self.horrorHours }
 
     /// A stable pseudo-random number in 0..<1 for particle i, property k.
     private func r(_ i: Int, _ k: Int) -> Double {
@@ -230,7 +251,7 @@ enum HolidaySeason: String {
 
     /// Every ~95 seconds something crosses the bottom of the screen, alternating direction.
     private func drawCameo(_ ctx: inout GraphicsContext, _ which: Cameo, _ W: Double, _ H: Double, _ t: Double, _ art: ArtSnapshot) {
-        var period = 95.0
+        var period = Self.horrorHours ? 45.0 : 95.0
         let dur = which == .bats ? 10.0 : 18.0
         #if DEBUG
         if ProcessInfo.processInfo.environment["NF_CAMEO"] != nil { period = 22 }  // simulator previews: one every 22 s
