@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 import random
 
-import accounts, arr, history, media, notify, office, player, store, tmdb
+import accounts, arr, history, media, notify, office, player, store, subtitles, tmdb
 
 VERSION = "0.4.0"
 COOKIE = "nf_token"
@@ -32,6 +32,11 @@ def _login_error(_, e):
 
 @app.exception_handler(player.PlayError)
 def _play_error(_, e):
+    return JSONResponse({"detail": str(e)}, status_code=400)
+
+
+@app.exception_handler(subtitles.SubError)
+def _sub_error(_, e):
     return JSONResponse({"detail": str(e)}, status_code=400)
 
 
@@ -547,11 +552,49 @@ class PlayStart(BaseModel):
     id: str = Field(pattern=r"^[A-Za-z0-9-]{1,64}$")
     offset: float = Field(0, ge=0, le=86400)
     platform: Literal["ios", "tvos", "web"] = "ios"  # web: browsers without built-in HLS (gets H.264 + stereo AAC)
+    subtitle: Optional[int] = Field(None, ge=0, le=100000)  # a Plex/Jellyfin track to burn in; 0 = none
 
 
 @app.post("/api/play/start")
 def play_start(body: PlayStart, user=Depends(current_user)):
-    return player.start(user, body.id, body.offset, body.platform)
+    return player.start(user, body.id, body.offset, body.platform, body.subtitle)
+
+
+# ---------- subtitles (subtitles.py) ----------
+ITEM_ID = r"^[A-Za-z0-9-]{1,64}$"
+
+
+@app.get("/api/subs/{item_id}")
+def subtitle_tracks(item_id: str = Path(pattern=ITEM_ID), user=Depends(current_user)):
+    """The subtitle tracks this movie/episode already has on the person's Plex/Jellyfin."""
+    return subtitles.tracks(user, item_id) | {"provider": subtitles.settings()["source"]}
+
+
+@app.get("/api/subs/{item_id}/search")
+def subtitle_search(kind: Literal["movie", "tv"], ext_id: int, item_id: str = Path(pattern=ITEM_ID),
+                    season: Optional[int] = None, episode: Optional[int] = None,
+                    language: Optional[str] = Query(None, pattern=r"^[a-z]{2}$"), user=Depends(current_user)):
+    return subtitles.search(user, kind, ext_id, item_id, season, episode, language)
+
+
+class SubGet(BaseModel):
+    kind: Literal["movie", "tv"]
+    id: str = Field(max_length=300)  # the search result's id
+    provider: Literal["plex", "jellyfin", "opensubtitles"]
+
+
+@app.post("/api/subs/{item_id}/get")
+def subtitle_get(body: SubGet, item_id: str = Path(pattern=ITEM_ID), user=Depends(current_user)):
+    return subtitles.get(user, body.kind, item_id, body.id, body.provider)
+
+
+@app.get("/api/subtitles/{file_id}.vtt", include_in_schema=False)
+def subtitle_file(file_id: str, user=Depends(current_user)):
+    path = subtitles.vtt_path(file_id)
+    if not path:
+        raise HTTPException(404, "No such subtitles.")
+    with open(path, encoding="utf-8") as f:
+        return Response(f.read(), media_type="text/vtt; charset=utf-8", headers={"Cache-Control": "private, max-age=86400"})
 
 
 class PlayProgress(BaseModel):
@@ -1453,6 +1496,7 @@ class Settings(BaseModel):
     show_requester: Optional[bool] = None
     office_on: Optional[bool] = None
     office_names: Optional[bool] = None
+    subtitles: Optional[dict] = None
 
 
 EDITABLE = {"radarr": {"url", "key", "profile", "root", "availability"},
@@ -1463,7 +1507,8 @@ EDITABLE = {"radarr": {"url", "key", "profile", "root", "availability"},
             "radarr4k": {"url", "key", "profile", "root", "availability"},
             "sonarr4k": {"url", "key", "profile", "root", "season_folders"},
             "notify": {"webhooks", "dm", "push", "events"},
-            "quotas": {"movie_limit", "movie_days", "tv_limit", "tv_days"}}
+            "quotas": {"movie_limit", "movie_days", "tv_limit", "tv_days"},
+            "subtitles": {"source", "key", "username", "secret", "language"}}
 FLAGS = ("jellyfin_login", "plex_login", "discord_login", "fluxer_login", "fluxer_needs_link", "auto_approve", "auto_next", "swipe_on", "match_on", "discord_needs_link", "show_requester", "office_on", "office_names")
 
 
@@ -1503,6 +1548,10 @@ def apply_settings(body: Settings):
                 v = {k: bool(x) for k, x in (v or {}).items() if k in store.DEFAULTS["notify"]["events"]}
             if f in ("url", "public_url") and v and not re.match(r"^https?://[^\s'\"<>]+$", str(v).strip()):
                 raise HTTPException(400, "Server addresses should start with http:// or https://")
+            if section == "subtitles" and f == "source" and v not in ("plex", "jellyfin", "opensubtitles"):
+                raise HTTPException(400, "Subtitles come from Plex, Jellyfin or OpenSubtitles.")
+            if section == "subtitles" and f == "language" and not re.fullmatch(r"[a-z]{2}", str(v)):
+                raise HTTPException(400, "Use a two-letter language code, like en or es.")
             if section == "quotas":
                 v = max(0, min(int(v or 0), 999)) if f.endswith("_limit") else max(1, min(int(v or 7), 365))
             c[section][f] = v.strip() if isinstance(v, str) else v

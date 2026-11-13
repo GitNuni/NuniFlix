@@ -47,6 +47,10 @@ DEFAULTS = {
     "discord_needs_link": True,
     # the same for Fluxer; off by default because the Fluxer role is usually the gate
     "fluxer_needs_link": False,
+    # Subtitles for "Play here": where "Find subtitles" looks. plex / jellyfin: the media server fetches them from
+    # OpenSubtitles itself; opensubtitles: NuniFlix asks OpenSubtitles.com with this API key (username/password optional,
+    # for the account's bigger daily allowance). language: what to search for first.
+    "subtitles": {"source": "plex", "key": "", "username": "", "secret": "", "language": "en"},
     "site_url": "",  # NuniFlix's own address; Discord redirects and links in posts use it (blank = whatever address is in use)
     "setup_done": False,
 }

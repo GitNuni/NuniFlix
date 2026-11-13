@@ -164,6 +164,9 @@ private struct WebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard let url = action.request.url else { return .cancel }
             if isOurs(url) || url.scheme == "about" || url.scheme == "blob" || url.scheme == "data" { return .allow }
+            // Embedded players (the YouTube trailer on title pages) load inside the page: never send those out.
+            // Only the page itself going somewhere else (a link tapped) opens another app.
+            if action.targetFrame?.isMainFrame == false { return .allow }
             if webView !== web { return .allow }  // inside a sign-in popup: plex.tv, discord.com, ...
             openOutside(url)
             return .cancel
@@ -186,7 +189,9 @@ private struct WebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             if let url = action.request.url, url.scheme?.hasPrefix("http") == true, !isOurs(url) {
-                openOutside(url)  // a link with target=_blank: Play in Plex, Jellyfin, a trailer
+                // A link with target=_blank: Play in Plex, Jellyfin, the Trailer chip. Only when someone actually tapped
+                // it: a click inside the embedded YouTube player (its logo, "Watch on YouTube") stays put.
+                if action.navigationType == .linkActivated, action.sourceFrame.isMainFrame { openOutside(url) }
                 return nil
             }
             // window.open("") for Plex / Discord / Fluxer sign-in: a real window the website can steer and close.

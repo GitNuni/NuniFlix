@@ -209,6 +209,17 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
 .player .pl-top b{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}
 .player .pl-exp{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#ffd34d;border:1px solid rgba(255,211,77,.5);border-radius:6px;padding:3px 6px}
 .player .close{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:16px}
+.player .pl-cc{height:30px;padding:0 9px;border-radius:6px;border:1.5px solid rgba(255,255,255,.8);color:#fff;font-weight:800;font-size:12px;letter-spacing:.04em}
+.player .pl-panel{position:absolute;right:12px;top:calc(env(safe-area-inset-top) + 56px);width:min(360px,calc(100% - 24px));max-height:70%;overflow-y:auto;
+  background:rgba(28,28,30,.97);border-radius:14px;padding:10px;z-index:2;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+.player .pl-panel h3{margin:4px 6px 8px;font-size:15px}
+.player .pl-opt{display:block;width:100%;text-align:left;padding:11px 12px;border-radius:10px;color:#fff;font-size:15px}
+.player .pl-opt small{display:block;color:#999;font-size:12px;margin-top:2px}
+.player .pl-opt.on{background:rgba(255,255,255,.14);font-weight:700}
+.player .pl-opt.find{color:var(--accent)}
+.player .pl-opt:hover{background:rgba(255,255,255,.08)}
+.player .pl-note{color:#bbb;margin:10px 8px;font-size:14px}
+.player video::cue{font-size:1.1em;background:rgba(0,0,0,.6)}
 .player .pl-body{flex:1;min-height:0;overflow-y:auto;padding-bottom:env(safe-area-inset-bottom)}
 .player .pl-stage{position:relative;height:100%;display:grid;place-items:center}
 .player video{width:100%;height:100%;max-height:100%;background:#000}
@@ -3147,6 +3158,7 @@ async function playHere(it) {
   let o;
   try { o = await api(`/play/${it.type}/${it.id}`); } catch (e) { toast(e.message); return; }
   plOpen(it.title);
+  PL.title = it;
   if (it.type === "movie") plAsk(o.items[0], []);
   else plEpisodes(o.items);
 }
@@ -3155,9 +3167,11 @@ function plOpen(title) {
   plClose();
   const el = document.createElement("div");
   el.className = "player"; el.id = "player";
-  el.innerHTML = `<div class="pl-top"><b>${esc(title)}</b><span class="pl-exp">super experimental</span><button class="close" aria-label="Close">✕</button></div><div class="pl-body"></div>`;
+  el.innerHTML = `<div class="pl-top"><b>${esc(title)}</b><span class="pl-exp">super experimental</span>
+    <button class="pl-cc" hidden aria-label="Subtitles">CC</button><button class="close" aria-label="Close">✕</button></div><div class="pl-body"></div><div class="pl-panel" hidden></div>`;
   document.body.appendChild(el);
   el.querySelector(".close").onclick = plClose;
+  el.querySelector(".pl-cc").onclick = plSubs;
   document.addEventListener("keydown", plKey);
 }
 const plKey = e => { if (e.key === "Escape" && !document.fullscreenElement) plClose(); };
@@ -3191,16 +3205,21 @@ function loadHls() {
   return new Promise((ok, bad) => { const sc = document.createElement("script"); sc.src = "/vendor/hls.min.js"; sc.onload = ok; sc.onerror = bad; document.head.appendChild(sc); });
 }
 
-async function plStart(e, at, upNext) {
+async function plStart(e, at, upNext, subtitle) {
   await plStopStream();
+  PL.ep = e; PL.upNext = upNext; PL.sub = subtitle ?? null;
+  if (subtitle != null || PL.vttFor !== e.id) PL.vtt = null;  // a burned-in track replaces drawn subtitles; a new episode drops them
+  $("#player .pl-panel")?.setAttribute("hidden", "");
   plBody().innerHTML = `<div class="pl-stage"><video controls autoplay playsinline></video><p class="pl-msg">Starting…</p></div>`;
   const v = plBody().querySelector("video"), msg = plBody().querySelector(".pl-msg");
   const fail = text => { if (msg) { msg.textContent = text; msg.hidden = false; } };
   let st;
-  try { st = await api("/play/start", {body: {id: e.id, offset: 0, platform: PL.native ? "ios" : "web"}}); }
+  try { st = await api("/play/start", {body: {id: e.id, offset: 0, platform: PL.native ? "ios" : "web", ...(subtitle != null ? {subtitle} : {})}}); }
   catch (err) { return fail(err.message); }
   if (!$("#player")) { api("/play/progress", {body: {session: st.session, position: 0, state: "stopped"}}).catch(() => {}); return; }
   PL.cur = {session: st.session, video: v, last: 0};
+  $("#player .pl-cc").hidden = false;
+  if (PL.vtt) plAddVtt(PL.vtt);
   v.addEventListener("loadedmetadata", () => { if (at > 0) v.currentTime = at; msg.hidden = true; }, {once: true});
   v.addEventListener("playing", () => { msg.hidden = true; });
   v.addEventListener("ended", async () => {
@@ -3217,6 +3236,66 @@ async function plStart(e, at, upNext) {
   plHls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) fail("The video stopped: " + (d.details || "playback error") + ". Try again, or use Play in Plex."); });
   plHls.loadSource(st.url);
   plHls.attachMedia(v);
+}
+
+/* Subtitles (server: subtitles.py). Tracks on the title are burned in by Plex/Jellyfin (the stream restarts where you
+   were); OpenSubtitles files (when that's the source in Settings) are added to the video as a subtitle track. */
+async function plSubs() {
+  const panel = $("#player .pl-panel"), e = PL.ep;
+  if (!panel || !e) return;
+  if (!panel.hidden) { panel.hidden = true; return; }
+  panel.hidden = false;
+  panel.innerHTML = `<p class="pl-note">Loading subtitles…</p>`;
+  let t;
+  try { t = await api(`/subs/${encodeURIComponent(e.id)}`); } catch (err) { panel.innerHTML = `<p class="pl-note">${esc(err.message)}</p>`; return; }
+  const on = id => PL.sub === id && !PL.vtt ? " on" : "";
+  panel.innerHTML = `<h3>Subtitles</h3>
+    <button class="pl-opt${PL.sub == null && !PL.vtt || PL.sub === 0 ? " on" : ""}" data-t="0">Off</button>
+    ${t.tracks.map(x => `<button class="pl-opt${on(x.id)}" data-t="${x.id}">${esc(x.title)}</button>`).join("")}
+    ${PL.vtt ? `<button class="pl-opt on" disabled>From OpenSubtitles</button>` : ""}
+    <button class="pl-opt find" id="plFind">Find subtitles…</button>`;
+  panel.querySelectorAll("[data-t]").forEach(b => b.onclick = () => {
+    const id = Number(b.dataset.t), v = PL.cur?.video;
+    if (id === 0 && PL.vtt) { PL.vtt = null; v?.querySelectorAll("track").forEach(x => x.remove()); panel.hidden = true; if (!PL.sub) return; }
+    plStart(e, v?.currentTime || 0, PL.upNext, id);
+  });
+  $("#plFind").onclick = () => plFind(e);
+}
+
+async function plFind(e) {
+  const panel = $("#player .pl-panel"), it = PL.title;
+  panel.innerHTML = `<p class="pl-note">Searching…</p>`;
+  let r;
+  try {
+    const q = new URLSearchParams({kind: it.type, ext_id: it.id, ...(e.season != null ? {season: e.season, episode: e.episode} : {})});
+    r = await api(`/subs/${encodeURIComponent(e.id)}/search?${q}`);
+  } catch (err) { panel.innerHTML = `<p class="pl-note">${esc(err.message)}</p><button class="pl-opt" id="plBack">Back</button>`; $("#plBack").onclick = () => { panel.hidden = true; plSubs(); }; return; }
+  const from = {plex: "Plex", jellyfin: "Jellyfin", opensubtitles: "OpenSubtitles"}[r.provider];
+  panel.innerHTML = `<h3>Found with ${from}</h3>${r.results.length ? r.results.map((x, i) => `<button class="pl-opt" data-i="${i}">${esc(x.title)}
+      <small>${[x.language, x.hi && "SDH", x.downloads && (r.provider === "plex" ? "score " : "") + x.downloads + (r.provider === "plex" ? "" : " downloads")].filter(Boolean).map(esc).join(" · ")}</small></button>`).join("")
+    : `<p class="pl-note">Nothing found in "${esc(r.language)}".</p>`}<button class="pl-opt" id="plBack">Back</button>`;
+  $("#plBack").onclick = () => { panel.hidden = true; plSubs(); };
+  panel.querySelectorAll("[data-i]").forEach(b => b.onclick = async () => {
+    const x = r.results[Number(b.dataset.i)];
+    panel.innerHTML = `<p class="pl-note">Getting it…</p>`;
+    try {
+      const g = await api(`/subs/${encodeURIComponent(e.id)}/get`, {body: {kind: it.type, id: x.id, provider: r.provider}});
+      panel.hidden = true;
+      if (g.vtt) { PL.vtt = g.vtt; PL.vttFor = e.id; plAddVtt(g.vtt); toast("Subtitles on"); }
+      else plStart(e, PL.cur?.video.currentTime || 0, PL.upNext, g.track);
+    } catch (err) { panel.innerHTML = `<p class="pl-note">${esc(err.message)}</p><button class="pl-opt" id="plBack">Back</button>`; $("#plBack").onclick = () => { panel.hidden = true; plSubs(); }; }
+  });
+}
+
+function plAddVtt(url) {
+  const v = PL.cur?.video;
+  if (!v) return;
+  v.querySelectorAll("track").forEach(x => x.remove());
+  const t = document.createElement("track");
+  Object.assign(t, {kind: "subtitles", label: "Subtitles", srclang: PL.title?.lang || "en", src: url, default: true});
+  v.appendChild(t);
+  t.track.mode = "showing";
+  t.addEventListener("load", () => { t.track.mode = "showing"; });
 }
 
 function plReport(state) {
@@ -4271,6 +4350,20 @@ async function paneSystem(el) {
       <label class="li"><span class="switch"><input type="checkbox" id="ofNames" ${SETUP.cfg.office_names !== false ? "checked" : ""}><i></i></span>
         <div class="body"><div class="t">Everyone sees who's watching what</div><div class="s">Off: people see themselves, and everyone else as "Someone watching something". Admins always see everything.</div></div></label></div>
     <p class="foot">Anything turned off here is gone from everyone's Home. People still arrange what's left in their own Home layout.</p>
+    <h2>Subtitles</h2>
+    <form class="form" id="subForm">
+      <label><span>Find subtitles with</span><select name="source">
+        ${[["plex", "Plex"], ["jellyfin", "Jellyfin"], ["opensubtitles", "OpenSubtitles (your own API key)"]].map(([v, t]) =>
+          `<option value="${v}" ${(SETUP.cfg.subtitles?.source || "plex") === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <label><span>Language</span><input name="language" maxlength="2" value="${esc(SETUP.cfg.subtitles?.language || "en")}" autocomplete="off" autocapitalize="off" placeholder="en"></label>
+      <div id="subOS" ${(SETUP.cfg.subtitles?.source || "plex") === "opensubtitles" ? "" : "hidden"}>
+        <label><span>API key</span><input name="key" autocomplete="off" placeholder="${SETUP.cfg.subtitles?.key_set ? "Saved (leave blank to keep)" : "From opensubtitles.com → API consumers"}"></label>
+        <label><span>Username</span><input name="username" autocomplete="off" autocapitalize="off" value="${esc(SETUP.cfg.subtitles?.username || "")}" placeholder="Optional"></label>
+        <label><span>Password</span><input name="secret" type="password" autocomplete="new-password" placeholder="${SETUP.cfg.subtitles?.secret_set ? "Saved (leave blank to keep)" : "Optional"}"></label>
+      </div>
+    </form>
+    <p class="foot">Used by Play here's <b>Find subtitles</b>. <b>Plex</b> or <b>Jellyfin</b>: they fetch from OpenSubtitles and add it to the title for everyone (Jellyfin needs its OpenSubtitles plugin). If a stream is from the other server, that server is used. <b>OpenSubtitles</b>: ${APP()} fetches them itself with your free key from opensubtitles.com; a username and password raise the daily download limit. Subtitles already on a title always show up.</p>
+    <button class="btn small" id="subSave">Save subtitles</button>
     <h2>At a glance</h2>${STEPS.done.html().replace(/<h1>[\s\S]*?<\/p>/, "")}
     <h2>Connections</h2><div class="summary" id="health">${["jellyfin", "plex", "radarr", "sonarr", "radarr4k", "sonarr4k", "tmdb", "discord", "fluxer"]
       .filter(k => SETUP.cfg[k] && (SETUP.cfg[k].url || SETUP.cfg[k].key_set || SETUP.cfg[k].client_id))
@@ -4290,6 +4383,14 @@ async function paneSystem(el) {
   };
   const bi = $("#brandForm [name=brand]", el);
   bi.oninput = () => { $("#brandPrev").textContent = (bi.value.trim().replace(/flix$/i, "") || "Nuni") + "Flix"; };
+  $("#subForm [name=source]").onchange = e => { $("#subOS").hidden = e.target.value !== "opensubtitles"; };
+  $("#subSave").onclick = async () => {
+    const f = new FormData($("#subForm")), subtitles = Object.fromEntries([...f.entries()].map(([k, v]) => [k, String(v).trim()]));
+    subtitles.language = (subtitles.language || "en").toLowerCase();
+    try { const r = await api("/admin/settings", {body: {subtitles}}); SETUP.cfg = {...SETUP.cfg, ...r.config}; toast("Saved");
+      $("#subForm [name=key]").value = ""; $("#subForm [name=secret]").value = ""; }
+    catch (err) { toast(err.message); }
+  };
   $("#brandSave").onclick = async e => {
     e.currentTarget.disabled = true;
     try { const r = await api("/admin/settings", {body: {brand: bi.value}}); applyBrand(r.config.brand); bi.value = r.config.brand; toast(`It's ${APP()} now`); }

@@ -78,7 +78,7 @@ struct DetailView: View {
             Text(playError ?? "")
         }
         .fullScreenCover(item: $nowPlaying) { np in
-            PlayerScreen(item: np.item, upNext: np.upNext, start: np.start)
+            PlayerScreen(item: np.item, upNext: np.upNext, start: np.start, kind: item.type, extID: item.extID ?? 0)
         }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

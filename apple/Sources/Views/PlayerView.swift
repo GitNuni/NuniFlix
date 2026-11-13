@@ -46,10 +46,23 @@ final class Playback: ObservableObject {
     private var statusObserver: NSKeyValueObservation?
     private var lastReport = Date.distantPast
     private var starting = false
+    /// The title being watched ("movie"/"tv" + its NuniFlix id), for the subtitle search.
+    let kind: String
+    let extID: Int
+    /// The Plex/Jellyfin subtitle track burned in (nil: whatever the server picks; 0: off).
+    private(set) var subtitle: Int?
+    /// OpenSubtitles text drawn over the picture, and the line showing right now.
+    private var cues: [Cue] = []
+    @Published var caption = ""
+    private var captionObserver: Any?
 
-    init(item: PlayItem, upNext: [PlayItem]) {
+    struct Cue { var start: Double; var end: Double; var text: String }
+
+    init(item: PlayItem, upNext: [PlayItem], kind: String, extID: Int) {
         current = item
         queue = upNext
+        self.kind = kind
+        self.extID = extID
     }
 
     static var platform: String {
@@ -69,7 +82,9 @@ final class Playback: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
         do {
-            let (data, _) = try await API.shared.post("/play/start", ["id": current.id, "offset": 0, "platform": Self.platform])
+            var body: [String: Any] = ["id": current.id, "offset": 0, "platform": Self.platform]
+            if let subtitle { body["subtitle"] = subtitle }
+            let (data, _) = try await API.shared.post("/play/start", body)
             let s: StreamStart = try API.shared.decode(data)
             guard let base = API.shared.base, let url = URL(string: base.absoluteString + s.url) else {
                 throw APIError(status: 0, message: "Bad stream address.")
@@ -136,7 +151,126 @@ final class Playback: ObservableObject {
         await stopStream()
         guard !queue.isEmpty else { finished = true; return }
         current = queue.removeFirst()
+        subtitle = nil      // track numbers belong to one episode
+        setCues([])
         await start(from: 0)
+    }
+
+    // MARK: subtitles (server: subtitles.py)
+
+    /// A Plex/Jellyfin track: the stream restarts where you were with it burned in (0 = off).
+    func useTrack(_ id: Int) async {
+        setCues([])
+        let at = position
+        subtitle = id
+        await stopStream()
+        await start(from: at)
+    }
+
+    func offSubtitles() async {
+        if !cues.isEmpty { setCues([]) }
+        if let subtitle, subtitle != 0 { await useTrack(0) }
+    }
+
+    /// The menu in the player's top bar: Off, the title's tracks, then Find subtitles… (searched when opened).
+    func subtitleMenu() async -> [UIMenuElement] {
+        struct Tracks: Decodable { var tracks: [Track] }
+        struct Track: Decodable { var id: Int; var title: String }
+        let t: Tracks? = try? await API.shared.get("/subs/\(current.id)")
+        let noneOn = (subtitle == nil || subtitle == 0) && cues.isEmpty
+        var items: [UIMenuElement] = [UIAction(title: "Off", state: noneOn ? .on : .off) { [weak self] _ in Task { await self?.offSubtitles() } }]
+        for tr in t?.tracks ?? [] {
+            items.append(UIAction(title: tr.title, state: subtitle == tr.id && cues.isEmpty ? .on : .off) { [weak self] _ in
+                Task { await self?.useTrack(tr.id) }
+            })
+        }
+        if !cues.isEmpty { items.append(UIAction(title: "From OpenSubtitles", attributes: .disabled, state: .on) { _ in }) }
+        let find = UIMenu(title: "Find subtitles…", image: UIImage(systemName: "magnifyingglass"), children: [
+            UIDeferredMenuElement.uncached { [weak self] done in
+                Task { @MainActor in done(await self?.searchMenu() ?? []) }
+            },
+        ])
+        items.append(find)
+        return items
+    }
+
+    private func searchMenu() async -> [UIMenuElement] {
+        struct Found: Decodable { var provider: String; var results: [Result] }
+        struct Result: Decodable { var id: String; var title: String; var language: String?; var downloads: Double?; var hi: Bool? }
+        var q = ["kind": kind, "ext_id": String(extID)]
+        if let s = current.season, let e = current.episode { q["season"] = String(s); q["episode"] = String(e) }
+        do {
+            let f: Found = try await API.shared.get("/subs/\(current.id)/search", q)
+            if f.results.isEmpty { return [UIAction(title: "Nothing found", attributes: .disabled) { _ in }] }
+            return f.results.prefix(25).map { r in
+                let sub = [r.language, r.hi == true ? "SDH" : nil, r.downloads.map { "\(Int($0))" }].compactMap { $0 }.joined(separator: " · ")
+                return UIAction(title: r.title, subtitle: sub.isEmpty ? nil : sub) { [weak self] _ in
+                    Task { await self?.get(r.id, provider: f.provider) }
+                }
+            }
+        } catch {
+            return [UIAction(title: error.localizedDescription, attributes: .disabled) { _ in }]
+        }
+    }
+
+    private func get(_ id: String, provider: String) async {
+        struct Got: Decodable { var track: Int?; var vtt: String? }
+        do {
+            let (data, _) = try await API.shared.post("/subs/\(current.id)/get", ["kind": kind, "id": id, "provider": provider])
+            let g: Got = try API.shared.decode(data)
+            if let track = g.track {
+                await useTrack(track)
+            } else if let vtt = g.vtt {
+                let (body, _) = try await API.shared.send("GET", String(vtt.dropFirst(4)))  // "/api/subtitles/…" -> "/subtitles/…"
+                setCues(Self.parseVTT(String(decoding: body, as: UTF8.self)))
+                if let subtitle, subtitle != 0 { await useTrack(0) }  // drawn text replaces a burned-in track
+            }
+        } catch {
+            self.error = nil
+            caption = ""
+            showNote(error.localizedDescription)
+        }
+    }
+
+    private func showNote(_ text: String) {
+        caption = text
+        Task { try? await Task.sleep(for: .seconds(4)); if caption == text { caption = "" } }
+    }
+
+    private func setCues(_ new: [Cue]) {
+        cues = new
+        caption = ""
+        if let captionObserver { player.removeTimeObserver(captionObserver) }
+        captionObserver = nil
+        guard !new.isEmpty else { return }
+        captionObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.2, preferredTimescale: 600), queue: .main) { [weak self] t in
+            Task { @MainActor in
+                guard let self else { return }
+                let s = t.seconds
+                self.caption = self.cues.first { $0.start <= s && s < $0.end }?.text ?? ""
+            }
+        }
+    }
+
+    /// WebVTT -> cues. Handles "00:01:02.500" and "01:02.500" times; drops styling tags.
+    static func parseVTT(_ text: String) -> [Cue] {
+        func secs(_ s: Substring) -> Double? {
+            let p = s.split(separator: ":").map { Double($0.replacingOccurrences(of: ",", with: ".")) }
+            guard p.allSatisfy({ $0 != nil }) else { return nil }
+            let v = p.compactMap { $0 }
+            return v.count == 3 ? v[0] * 3600 + v[1] * 60 + v[2] : v.count == 2 ? v[0] * 60 + v[1] : nil
+        }
+        var out: [Cue] = []
+        for block in text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n\n") {
+            let lines = block.split(separator: "\n", omittingEmptySubsequences: true)
+            guard let i = lines.firstIndex(where: { $0.contains("-->") }) else { continue }
+            let parts = lines[i].components(separatedBy: "-->")
+            guard parts.count == 2, let a = secs(Substring(parts[0].trimmingCharacters(in: .whitespaces))),
+                  let b = secs(Substring(parts[1].trimmingCharacters(in: .whitespaces).split(separator: " ").first ?? "")) else { continue }
+            let body = lines[(i + 1)...].joined(separator: "\n").replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            if !body.isEmpty { out.append(Cue(start: a, end: b, text: body)) }
+        }
+        return out.sorted { $0.start < $1.start }
     }
 
     private func stopStream() async {
@@ -152,6 +286,7 @@ final class Playback: ObservableObject {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
         statusObserver = nil
+        setCues([])
         Task { await stopStream(); player.replaceCurrentItem(with: nil) }
     }
 }
@@ -162,13 +297,13 @@ struct PlayerScreen: View {
     @StateObject private var playback: Playback
     let start: Double
 
-    init(item: PlayItem, upNext: [PlayItem], start: Double) {
-        _playback = StateObject(wrappedValue: Playback(item: item, upNext: upNext))
+    init(item: PlayItem, upNext: [PlayItem], start: Double, kind: String, extID: Int) {
+        _playback = StateObject(wrappedValue: Playback(item: item, upNext: upNext, kind: kind, extID: extID))
         self.start = start
     }
 
     var body: some View {
-        PlayerController(player: playback.player)
+        PlayerController(playback: playback)
             .ignoresSafeArea()
             .background(Color.black)
             .onAppear { Task { await playback.start(from: start) } }  // not tied to the view: a redraw mustn't cancel it
@@ -183,19 +318,76 @@ struct PlayerScreen: View {
 }
 
 private struct PlayerController: UIViewControllerRepresentable {
-    let player: AVPlayer
+    let playback: Playback
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
-        vc.player = player
+        vc.player = playback.player
         #if os(iOS)
         vc.allowsPictureInPicturePlayback = true
         vc.canStartPictureInPictureAutomaticallyFromInline = true
+        #else
+        // Swipe down while watching: a Subtitles menu next to Apple's own audio/subtitle controls.
+        let pb = playback
+        vc.transportBarCustomMenuItems = [UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), children: [
+            UIDeferredMenuElement.uncached { done in Task { @MainActor in done(await pb.subtitleMenu()) } },
+        ])]
         #endif
+        // OpenSubtitles text, drawn over the picture (under the controls).
+        let host = UIHostingController(rootView: CaptionView(playback: playback))
+        host.view.backgroundColor = .clear
+        host.view.isUserInteractionEnabled = false
+        if let overlay = vc.contentOverlayView {
+            host.view.frame = overlay.bounds
+            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            overlay.addSubview(host.view)
+        }
+        context.coordinator.host = host
         return vc
     }
 
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator { var host: UIHostingController<CaptionView>? }
+}
+
+/// The current subtitle line, bottom centre, white on a soft shadow box (like Apple's own subtitles).
+struct CaptionView: View {
+    @ObservedObject var playback: Playback
+
+    var body: some View {
+        VStack {
+            Spacer()
+            if !playback.caption.isEmpty {
+                Text(playback.caption)
+                    .font(.system(size: size, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
+                    .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.bottom, bottom)
+                    .padding(.horizontal, 60)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var size: CGFloat {
+        #if os(tvOS)
+        return 46
+        #else
+        return 20
+        #endif
+    }
+
+    private var bottom: CGFloat {
+        #if os(tvOS)
+        return 90
+        #else
+        return 40
+        #endif
+    }
 }
 
 /// A show's episodes, season by season. "Next up" is the first one not watched yet.

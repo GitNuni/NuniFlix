@@ -164,13 +164,14 @@ JF_PROFILE_WEB = {**JF_PROFILE, "TranscodingProfiles": [
      "MaxAudioChannels": "2", "MinSegments": "1", "BreakOnNonKeyFrames": True}]}
 
 
-def start(user, item_id, offset, platform):
-    """Start a stream of one movie/episode. Returns {url, session}; url is relative to the NuniFlix server."""
+def start(user, item_id, offset, platform, subtitle=None):
+    """Start a stream of one movie/episode. Returns {url, session}; url is relative to the NuniFlix server.
+    subtitle: a Plex/Jellyfin subtitle track to burn into the picture (0 = none, None = leave as it is)."""
     src, token, ident = _access(user)
     client = _client_id(user, platform)
     sid = secrets.token_urlsafe(32)
     s = {"sid": sid, "user": user["id"], "source": src, "token": token, "client": client, "platform": platform,
-         "item": item_id, "seen": time.time(), "started": False}
+         "item": item_id, "seen": time.time(), "started": False, "subtitle": subtitle}
     try:
         if src == "plex":
             path, query = _plex_start(s, offset)
@@ -199,6 +200,10 @@ def _plex_start(s, offset):
         "session": s["sid"], "X-Plex-Session-Identifier": s["sid"], "X-Plex-Client-Identifier": s["client"],
         "X-Plex-Product": store.app_name(), "X-Plex-Platform": "iOS", "X-Plex-Device": _device(s["platform"]),
     }
+    if s["subtitle"] is not None:  # Plex burns in the person's selected track for the title
+        import subtitles
+        subtitles.select_plex(s["token"], s["item"], s["subtitle"])
+        params["subtitles"] = "burn" if s["subtitle"] else "auto"
     h = _plex_h(s["token"], s["client"], s["platform"])
     _http.get(_plex_base() + "/video/:/transcode/universal/decision", headers=h, params=params).raise_for_status()
     s["duration"] = 0
@@ -206,9 +211,17 @@ def _plex_start(s, offset):
 
 
 def _jf_start(s, uid, offset):
+    profile = JF_PROFILE_WEB if s["platform"] == "web" else JF_PROFILE
+    body = {"UserId": uid, "StartTimeTicks": int((offset or 0) * 1e7), "DeviceProfile": profile,
+            "EnableDirectPlay": False, "EnableDirectStream": False, "AutoOpenLiveStream": True}
+    if s["subtitle"]:  # burn the chosen track into the picture
+        body["SubtitleStreamIndex"] = int(s["subtitle"])
+        body["DeviceProfile"] = {**profile, "SubtitleProfiles": [{"Format": f, "Method": "Encode"} for f in
+                                                                 ("srt", "subrip", "ass", "ssa", "vtt", "webvtt", "pgssub", "dvdsub", "sub")]}
+    elif s["subtitle"] == 0:
+        body["SubtitleStreamIndex"] = -1
     r = _http.post(f"{_jf_base()}/Items/{s['item']}/PlaybackInfo", headers=_jf_h(s["token"], s["client"], s["platform"]),
-                   params={"userId": uid}, json={"UserId": uid, "StartTimeTicks": int((offset or 0) * 1e7), "DeviceProfile": JF_PROFILE_WEB if s["platform"] == "web" else JF_PROFILE,
-                                                 "EnableDirectPlay": False, "EnableDirectStream": False, "AutoOpenLiveStream": True})
+                   params={"userId": uid}, json=body)
     r.raise_for_status()
     d = r.json()
     src = d["MediaSources"][0]
