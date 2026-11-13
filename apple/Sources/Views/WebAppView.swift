@@ -71,9 +71,6 @@ private struct WebView: UIViewRepresentable {
         web.backgroundColor = .black
         web.scrollView.backgroundColor = .black
         web.scrollView.contentInsetAdjustmentBehavior = .never  // the website handles the notch and home bar itself
-        let refresh = UIRefreshControl()
-        refresh.addTarget(context.coordinator, action: #selector(Coordinator.pullToRefresh(_:)), for: .valueChanged)
-        web.scrollView.refreshControl = refresh
         context.coordinator.web = web
         config.websiteDataStore.httpCookieStore.add(context.coordinator)
         context.coordinator.signInAndLoad()
@@ -117,11 +114,6 @@ private struct WebView: UIViewRepresentable {
                 self.cookieSet = true
                 web.load(URLRequest(url: self.parent.server))
             }
-        }
-
-        @objc func pullToRefresh(_ sender: UIRefreshControl) {
-            web?.reload()
-            sender.endRefreshing()
         }
 
         // MARK: signed out on the website -> sign the app out

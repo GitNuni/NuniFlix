@@ -120,6 +120,7 @@ h2 small{font-size:15px;font-weight:400;color:var(--text2)}
   border-radius:14px 14px 0 0;transform:translateY(100%);transition:transform .34s cubic-bezier(.32,.72,0,1);
   padding-bottom:env(safe-area-inset-bottom);max-width:720px;margin:0 auto;overscroll-behavior:contain}
 .sheet.on{transform:none}
+@media (pointer:coarse){.sheet::before{content:"";position:sticky;top:6px;display:block;width:38px;height:5px;margin:6px auto -11px;border-radius:3px;background:rgba(150,150,150,.6);z-index:5}}
 .hero{position:relative;aspect-ratio:16/9;background:#111 center/cover}
 .hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 40%,var(--bg))}
 .close{position:absolute;top:12px;right:12px;z-index:2;width:30px;height:30px;border-radius:50%;
@@ -3097,6 +3098,42 @@ document.addEventListener("click", e => {
   if (e.target.closest("[data-open-match]")) nav({...CUR, match: "new"});
 });
 function closeSheet() { if (CUR.item || CUR.person) back(); else hideSheet(); }
+
+/* Swipe a sheet down to close it, like an iPhone sheet (only from the top of its content, and only a mostly
+   vertical drag, so sideways rows like the cast still scroll). */
+(() => {
+  const sh = $("#sheet"), scrim = $("#scrim");
+  let x0 = null, y0 = null, dy = 0, t0 = 0, dragging = false;
+  sh.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dy = 0; t0 = Date.now(); dragging = false;
+  }, {passive: true});
+  sh.addEventListener("touchmove", e => {
+    if (y0 == null) return;
+    const d = e.touches[0].clientY - y0, dx = e.touches[0].clientX - x0;
+    if (!dragging) {
+      if (sh.scrollTop > 0 || d < 0 || Math.abs(dx) > Math.abs(d)) { if (Math.abs(d) > 6 || Math.abs(dx) > 6) y0 = null; return; }
+      if (d < 8) return;
+      dragging = true; sh.style.transition = "none"; scrim.style.transition = "none";
+    }
+    dy = Math.max(0, d);
+    sh.style.transform = `translateY(${dy}px)`;
+    scrim.style.opacity = String(Math.max(0, 1 - dy / 600));
+    e.preventDefault();
+  }, {passive: false});
+  const end = () => {
+    if (!dragging) { y0 = null; return; }
+    const fast = dy / Math.max(1, Date.now() - t0) > 0.5;
+    sh.style.transition = ""; scrim.style.transition = ""; scrim.style.opacity = "";
+    if (dy > 110 || (fast && dy > 30)) {
+      sh.style.transform = "translateY(100%)";
+      setTimeout(() => { closeSheet(); sh.style.transform = ""; }, 260);
+    } else sh.style.transform = "";
+    y0 = null; dragging = false; dy = 0;
+  };
+  sh.addEventListener("touchend", end);
+  sh.addEventListener("touchcancel", end);
+})();
 function hideSheet() { $$("#sheet .hero-tr").forEach(h => h.remove()); $("#sheet").classList.remove("on"); $("#scrim").classList.remove("on"); document.body.style.overflow = ""; }
 
 function sheetLoading() {
