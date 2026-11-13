@@ -53,7 +53,7 @@ def _client_id(user, platform):
 
 
 def _device(platform):
-    return "Apple TV" if platform == "tvos" else "iPhone"
+    return {"tvos": "Apple TV", "ios": "iPhone", "web": "Browser"}.get(platform, "iPhone")
 
 
 def _plex_base():
@@ -158,6 +158,10 @@ JF_PROFILE = {
     "SubtitleProfiles": [{"Format": "vtt", "Method": "Hls"}],
     "ContainerProfiles": [], "CodecProfiles": [],
 }
+# Browsers without built-in HLS (Chrome, Firefox) play through hls.js: H.264 + stereo AAC in MPEG-TS is what they all handle.
+JF_PROFILE_WEB = {**JF_PROFILE, "TranscodingProfiles": [
+    {"Container": "ts", "Type": "Video", "VideoCodec": "h264", "AudioCodec": "aac", "Context": "Streaming", "Protocol": "hls",
+     "MaxAudioChannels": "2", "MinSegments": "1", "BreakOnNonKeyFrames": True}]}
 
 
 def start(user, item_id, offset, platform):
@@ -189,6 +193,8 @@ def _plex_start(s, offset):
         "path": f"/library/metadata/{s['item']}", "mediaIndex": 0, "partIndex": 0, "protocol": "hls", "fastSeek": 1,
         "directPlay": 0, "directStream": 1, "directStreamAudio": 1, "videoQuality": 100,
         "videoResolution": "3840x2160" if s["platform"] == "tvos" else "1920x1080", "maxVideoBitrate": 40000,
+        # browsers: convert everything to H.264 + AAC (Plex would otherwise pass through HEVC / surround audio they can't play)
+        **({"directStream": 0, "directStreamAudio": 0, "audioChannelCount": 2} if s["platform"] == "web" else {}),
         "subtitles": "auto", "subtitleSize": 100, "audioBoost": 100, "location": "lan", "offset": int(offset or 0),
         "session": s["sid"], "X-Plex-Session-Identifier": s["sid"], "X-Plex-Client-Identifier": s["client"],
         "X-Plex-Product": store.app_name(), "X-Plex-Platform": "iOS", "X-Plex-Device": _device(s["platform"]),
@@ -201,7 +207,7 @@ def _plex_start(s, offset):
 
 def _jf_start(s, uid, offset):
     r = _http.post(f"{_jf_base()}/Items/{s['item']}/PlaybackInfo", headers=_jf_h(s["token"], s["client"], s["platform"]),
-                   params={"userId": uid}, json={"UserId": uid, "StartTimeTicks": int((offset or 0) * 1e7), "DeviceProfile": JF_PROFILE,
+                   params={"userId": uid}, json={"UserId": uid, "StartTimeTicks": int((offset or 0) * 1e7), "DeviceProfile": JF_PROFILE_WEB if s["platform"] == "web" else JF_PROFILE,
                                                  "EnableDirectPlay": False, "EnableDirectStream": False, "AutoOpenLiveStream": True})
     r.raise_for_status()
     d = r.json()

@@ -27,6 +27,10 @@ final class AppModel: ObservableObject {
         if let s = UserDefaults.standard.string(forKey: "server"), let u = URL(string: s) { server = u }
         API.shared.base = server
         API.shared.token = Keychain.get("token")
+        #if DEBUG
+        // Simulator testing only (not in TestFlight/App Store builds): start signed in with a given session token.
+        if let t = ProcessInfo.processInfo.environment["NF_TEST_TOKEN"] { API.shared.token = t }
+        #endif
         signedIn = server != nil && API.shared.token != nil
         API.shared.onUnauthorized = { [weak self] in self?.forget() }
     }

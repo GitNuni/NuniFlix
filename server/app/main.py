@@ -546,7 +546,7 @@ def play_options(kind: Literal["movie", "tv"], ext_id: int, user=Depends(current
 class PlayStart(BaseModel):
     id: str = Field(pattern=r"^[A-Za-z0-9-]{1,64}$")
     offset: float = Field(0, ge=0, le=86400)
-    platform: Literal["ios", "tvos"] = "ios"
+    platform: Literal["ios", "tvos", "web"] = "ios"  # web: browsers without built-in HLS (gets H.264 + stereo AAC)
 
 
 @app.post("/api/play/start")

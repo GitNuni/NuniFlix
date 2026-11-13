@@ -36,12 +36,17 @@ struct RootView: View {
     }
 }
 
-/// Signed in: pick a service, browse it, open a title, request it.
+/// Signed in. iPhone/iPad: the NuniFlix website itself (WebAppView), so it always matches the web app.
+/// Apple TV: native screens: pick a service, browse it, open a title, request it, play it.
 struct MainView: View {
     @EnvironmentObject var model: AppModel
     @State private var path = NavigationPath()
 
     var body: some View {
+        #if os(iOS)
+        WebAppView()
+            .task { await model.loadMe() }
+        #else
         NavigationStack(path: $path) {
             ServicesView()
                 .navigationDestination(for: Route.self) { route in
@@ -54,5 +59,6 @@ struct MainView: View {
                 }
         }
         .task { await model.loadMe() }
+        #endif
     }
 }

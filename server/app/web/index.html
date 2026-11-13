@@ -200,7 +200,29 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
   .row::-webkit-scrollbar,.xrow::-webkit-scrollbar{display:block;height:8px}
   .row::-webkit-scrollbar-thumb,.xrow::-webkit-scrollbar-thumb{background:var(--fill2);border-radius:4px}
 }
-.watch{display:flex;gap:8px;margin-bottom:10px}
+.watch{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.watch .here{flex:1 1 100%}
+.watch .here small{font-weight:500;opacity:.7;margin-left:2px}
+/* Play here */
+.player{position:fixed;inset:0;z-index:80;background:#000;color:#fff;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+.player .pl-top{display:flex;align-items:center;gap:10px;height:52px;padding:0 12px 0 16px;flex:none}
+.player .pl-top b{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}
+.player .pl-exp{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#ffd34d;border:1px solid rgba(255,211,77,.5);border-radius:6px;padding:3px 6px}
+.player .close{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:16px}
+.player .pl-body{flex:1;min-height:0;overflow-y:auto;padding-bottom:env(safe-area-inset-bottom)}
+.player .pl-stage{position:relative;height:100%;display:grid;place-items:center}
+.player video{width:100%;height:100%;max-height:100%;background:#000}
+.player .pl-msg{position:absolute;left:0;right:0;bottom:16%;text-align:center;color:#ddd;padding:0 24px;pointer-events:none}
+.player .pl-ask{max-width:420px;margin:12vh auto 0;padding:0 20px;display:grid;gap:12px;text-align:center}
+.player .pl-ask h2{margin:0 0 8px}
+.player .pl-list{max-width:640px;margin:0 auto;padding:4px 16px 24px}
+.player .pl-list h2{font-size:15px;color:#aaa;margin:18px 4px 8px;font-weight:700}
+.player .list{background:#1c1c1e;border-radius:12px;overflow:hidden}
+.player .pl-ep{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);color:#fff}
+.player .pl-ep:last-child{border-bottom:0}
+.player .pl-ep .s{font-size:13px;color:#999;margin-top:2px}
+.player .pl-mark{flex:none;width:20px;text-align:center;color:#30d158;font-weight:700}
+.player .pl-ep.seen .t{color:#bbb}
 .watch:empty{display:none}
 .watch a{flex:1}
 .btn.jf{background:linear-gradient(135deg,#aa5cc3,#00a4dc);color:#fff}
@@ -3105,10 +3127,125 @@ async function loadWatch(it) {
   try {
     const w = await api(`/watch/${it.type}/${it.id}`);
     if (!CUR.item || !$("#watchSlot")) return;
-    $("#watchSlot").innerHTML = (w.jellyfin ? `<a class="btn jf" href="${esc(w.jellyfin)}" target="_blank" rel="noopener">▶ Play on Jellyfin</a>` : "")
-      + (w.plex ? `<a class="btn plexplay" href="${esc(w.plex)}" target="_blank" rel="noopener">▶ Play on Plex</a>` : "");
+    $("#watchSlot").innerHTML = (w.plex ? `<a class="btn plexplay" href="${esc(w.plex)}" target="_blank" rel="noopener">▶ Play in Plex</a>` : "")
+      + (w.jellyfin ? `<a class="btn jf" href="${esc(w.jellyfin)}" target="_blank" rel="noopener">▶ Play in Jellyfin</a>` : "")
+      + `<button class="btn gray here" id="playHere">▶ Play here <small>(super experimental!)</small></button>`;
+    $("#playHere").onclick = () => playHere(it);
   } catch {}
 }
+
+/* ---------- Play here: the person's own Plex/Jellyfin, streamed through NuniFlix (server: player.py) ----------
+   Safari and the iPhone/iPad play the stream themselves; other browsers use hls.js (web/vendor, loaded on first use)
+   and get a version every browser can play (H.264 + stereo AAC). Progress goes back every 10 s so Plex/Jellyfin keep
+   the resume point; "stopped" when the player closes. */
+const PL = {native: !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl")};
+const plClock = s => { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`; };
+const plCanResume = e => e.resume > 60 && (!e.duration || e.resume < e.duration * .93);
+
+async function playHere(it) {
+  let o;
+  try { o = await api(`/play/${it.type}/${it.id}`); } catch (e) { toast(e.message); return; }
+  plOpen(it.title);
+  if (it.type === "movie") plAsk(o.items[0], []);
+  else plEpisodes(o.items);
+}
+
+function plOpen(title) {
+  plClose();
+  const el = document.createElement("div");
+  el.className = "player"; el.id = "player";
+  el.innerHTML = `<div class="pl-top"><b>${esc(title)}</b><span class="pl-exp">super experimental</span><button class="close" aria-label="Close">✕</button></div><div class="pl-body"></div>`;
+  document.body.appendChild(el);
+  el.querySelector(".close").onclick = plClose;
+  document.addEventListener("keydown", plKey);
+}
+const plKey = e => { if (e.key === "Escape" && !document.fullscreenElement) plClose(); };
+const plBody = () => $("#player .pl-body");
+
+function plEpisodes(eps) {
+  const next = eps.find(plCanResume) || eps.find(e => !e.watched) || eps[0];
+  const row = e => `<button class="li pl-ep${e.watched ? " seen" : ""}" data-id="${esc(e.id)}"><span class="pl-mark">${e.watched ? "✓" : plCanResume(e) ? "◐" : ""}</span>
+    <div class="body"><div class="t">${esc(e.title || "Episode " + (e.episode ?? ""))}</div>
+    <div class="s">${[e.season != null && `S${e.season} · E${e.episode}`, e.duration && Math.round(e.duration / 60) + "m", plCanResume(e) && Math.round((e.duration - e.resume) / 60) + "m left"].filter(Boolean).join(" · ")}</div></div></button>`;
+  const seasons = [...new Set(eps.map(e => e.season ?? 0))].sort((a, b) => a - b);
+  plBody().innerHTML = `<div class="pl-list">${next ? `<h2>Next up</h2><div class="list">${row(next)}</div>` : ""}
+    ${seasons.map(n => `<h2>${n ? "Season " + n : "Specials"}</h2><div class="list">${eps.filter(e => (e.season ?? 0) === n).map(row).join("")}</div>`).join("")}</div>`;
+  plBody().querySelectorAll(".pl-ep").forEach(b => b.onclick = () => {
+    const i = eps.findIndex(e => e.id === b.dataset.id);
+    plAsk(eps[i], eps.slice(i + 1));
+  });
+}
+
+function plAsk(e, upNext) {
+  if (!plCanResume(e)) return plStart(e, 0, upNext);
+  plBody().innerHTML = `<div class="pl-ask"><h2>${esc(e.title)}</h2>
+    <button class="btn" id="plResume">Resume from ${plClock(e.resume)}</button><button class="btn gray" id="plFresh">Start from the beginning</button></div>`;
+  $("#plResume").onclick = () => plStart(e, e.resume, upNext);
+  $("#plFresh").onclick = () => plStart(e, 0, upNext);
+}
+
+let plHls = null;
+function loadHls() {
+  if (window.Hls) return Promise.resolve();
+  return new Promise((ok, bad) => { const sc = document.createElement("script"); sc.src = "/vendor/hls.min.js"; sc.onload = ok; sc.onerror = bad; document.head.appendChild(sc); });
+}
+
+async function plStart(e, at, upNext) {
+  await plStopStream();
+  plBody().innerHTML = `<div class="pl-stage"><video controls autoplay playsinline></video><p class="pl-msg">Starting…</p></div>`;
+  const v = plBody().querySelector("video"), msg = plBody().querySelector(".pl-msg");
+  const fail = text => { if (msg) { msg.textContent = text; msg.hidden = false; } };
+  let st;
+  try { st = await api("/play/start", {body: {id: e.id, offset: 0, platform: PL.native ? "ios" : "web"}}); }
+  catch (err) { return fail(err.message); }
+  if (!$("#player")) { api("/play/progress", {body: {session: st.session, position: 0, state: "stopped"}}).catch(() => {}); return; }
+  PL.cur = {session: st.session, video: v, last: 0};
+  v.addEventListener("loadedmetadata", () => { if (at > 0) v.currentTime = at; msg.hidden = true; }, {once: true});
+  v.addEventListener("playing", () => { msg.hidden = true; });
+  v.addEventListener("ended", async () => {
+    await plStopStream();
+    if (upNext.length) plStart(upNext[0], 0, upNext.slice(1)); else plClose();
+  });
+  v.addEventListener("error", () => fail("The video wouldn't play here. Try Play in Plex or Play in Jellyfin."));
+  v.addEventListener("timeupdate", () => { if (Date.now() - PL.cur?.last > 10000) plReport("auto"); });
+  v.addEventListener("pause", () => plReport("paused"));
+  if (PL.native) { v.src = st.url; return; }
+  try { await loadHls(); } catch { return fail("Couldn't load the player. Check your connection and try again."); }
+  if (!window.Hls?.isSupported()) return fail("This browser can't play it. Try Play in Plex or Play in Jellyfin.");
+  plHls = new Hls({startPosition: at > 0 ? at : -1});
+  plHls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) fail("The video stopped: " + (d.details || "playback error") + ". Try again, or use Play in Plex."); });
+  plHls.loadSource(st.url);
+  plHls.attachMedia(v);
+}
+
+function plReport(state) {
+  const c = PL.cur;
+  if (!c) return;
+  c.last = Date.now();
+  const v = c.video;
+  api("/play/progress", {body: {session: c.session, position: v.currentTime || 0, duration: isFinite(v.duration) ? v.duration : null,
+                                state: state === "auto" ? (v.paused ? "paused" : "playing") : state}}).catch(() => {});
+}
+
+async function plStopStream(beacon) {
+  const c = PL.cur;
+  if (!c) return;
+  PL.cur = null;
+  if (plHls) { plHls.destroy(); plHls = null; }
+  const body = {session: c.session, position: c.video.currentTime || 0, duration: isFinite(c.video.duration) ? c.video.duration : null, state: "stopped"};
+  c.video.pause(); c.video.removeAttribute("src"); c.video.load();
+  if (beacon) return fetch("/api/play/progress", {method: "POST", keepalive: true, credentials: "same-origin",
+                                                 headers: {"X-NF": "1", "Content-Type": "application/json"}, body: JSON.stringify(body)}).catch(() => {});
+  await api("/play/progress", {body}).catch(() => {});
+}
+
+function plClose() {
+  plStopStream();
+  $("#player")?.remove();
+  document.removeEventListener("keydown", plKey);
+}
+addEventListener("pagehide", () => plStopStream(true));
 
 async function loadExtras(it) {
   try {
