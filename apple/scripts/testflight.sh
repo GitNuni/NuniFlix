@@ -35,9 +35,16 @@ for pair in "NuniFlix-iOS:iOS" "NuniFlix-TV:tvOS"; do
       -archivePath "$OUT/$scheme.xcarchive" CODE_SIGNING_ALLOWED=NO archive
     # An unsigned archive carries no entitlements, and export signing keeps only what's already there: stamp them on
     # (e.g. aps-environment, or iPhone notifications fail with "no valid aps-environment entitlement").
+    APP="$OUT/$scheme.xcarchive/Products/Applications/$scheme.app"
+    for ext in "$APP"/PlugIns/*.appex; do  # extensions first (e.g. Top Shelf), then the app around them
+      [ -e "$ext" ] || continue
+      name=$(basename "$ext" .appex)
+      if [ -f "$name.entitlements" ]; then
+        codesign --force --sign - --timestamp=none --generate-entitlement-der --entitlements "$name.entitlements" "$ext"
+      fi
+    done
     if [ -f "$scheme.entitlements" ]; then
-      codesign --force --sign - --timestamp=none --generate-entitlement-der --entitlements "$scheme.entitlements" \
-        "$OUT/$scheme.xcarchive/Products/Applications/$scheme.app"
+      codesign --force --sign - --timestamp=none --generate-entitlement-der --entitlements "$scheme.entitlements" "$APP"
     fi
   fi
   echo "== $scheme: signing and uploading"

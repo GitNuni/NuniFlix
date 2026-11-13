@@ -23,6 +23,15 @@ final class AppModel: ObservableObject {
         _ = try? await API.shared.post("/me/prefs", ["theme": id])
     }
 
+    /// The Top Shelf extension reads the server and sign-in from here (Apple TV only).
+    static func shareWithTopShelf() {
+        #if os(tvOS)
+        let shared = UserDefaults(suiteName: "group.com.nunitech.nuniflix")
+        shared?.set(API.shared.base?.absoluteString, forKey: "server")
+        shared?.set(API.shared.token, forKey: "token")
+        #endif
+    }
+
     init() {
         if let s = UserDefaults.standard.string(forKey: "server"), let u = URL(string: s) { server = u }
         API.shared.base = server
@@ -33,6 +42,7 @@ final class AppModel: ObservableObject {
         #endif
         signedIn = server != nil && API.shared.token != nil
         API.shared.onUnauthorized = { [weak self] in self?.forget() }
+        Self.shareWithTopShelf()
     }
 
     static var deviceName: String {
@@ -47,6 +57,7 @@ final class AppModel: ObservableObject {
         server = u
         API.shared.base = u
         UserDefaults.standard.set(u.absoluteString, forKey: "server")
+        Self.shareWithTopShelf()
     }
 
     func clearServer() async {
@@ -61,6 +72,7 @@ final class AppModel: ObservableObject {
         Keychain.set("token", s.token)
         API.shared.token = s.token
         signedIn = true
+        Self.shareWithTopShelf()
         Task { await loadMe() }
     }
 
@@ -83,6 +95,7 @@ final class AppModel: ObservableObject {
         API.shared.token = nil
         signedIn = false
         me = nil
+        Self.shareWithTopShelf()
     }
 }
 

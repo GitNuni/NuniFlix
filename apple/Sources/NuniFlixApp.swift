@@ -77,6 +77,12 @@ struct MainView: View {
                 }
         }
         .task { await model.loadMe() }
+        .onOpenURL { url in  // nuniflix://item/movie/603 (Top Shelf)
+            let parts = url.pathComponents.filter { $0 != "/" }
+            guard url.host() == "item", parts.count == 2, let id = Int(parts[1]) else { return }
+            let item = parts[0] == "tvtmdb" ? Item(type: "tv", extID: nil, tmdb: id) : Item(type: parts[0], extID: id, tmdb: parts[0] == "movie" ? id : nil)
+            path.append(Route.item(item))
+        }
         #endif
     }
 }
