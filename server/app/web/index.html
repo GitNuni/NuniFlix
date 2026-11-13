@@ -802,7 +802,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 .bb-tr,.hero-tr{position:absolute;inset:0;overflow:hidden;pointer-events:none;container-type:size;opacity:0;transition:opacity .9s}
 .bb-tr{z-index:-2}
 .bb-tr.on,.hero-tr.on{opacity:1}
-.bb-tr iframe,.hero-tr iframe{position:absolute;top:50%;left:50%;width:max(100cqw,177.78cqh);height:max(100cqh,56.25cqw);border:0;transform:translate(-50%,-50%) scale(1.25)}
+.bb-tr iframe,.hero-tr iframe{position:absolute;top:50%;left:50%;width:max(100cqw,177.78cqh);height:max(100cqh,56.25cqw);border:0;transform:translate(-50%,-50%) scale(1.25);pointer-events:none}  /* taps go to the page, never to YouTube */
 .bb::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(0,0,0,.3),transparent 26%,transparent 42%,rgba(0,0,0,.9))}
 .bb-body{position:absolute;left:0;right:0;bottom:0;padding:18px 18px 20px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px}
 .bb-kick{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;opacity:.85;margin:0}
