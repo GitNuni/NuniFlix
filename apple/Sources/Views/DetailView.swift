@@ -127,7 +127,7 @@ struct DetailView: View {
     }
 
     @ViewBuilder private var buttons: some View {
-        HStack(spacing: 20) {
+        FlowLayout(spacing: Metrics.spacing) {
             if !loaded {
                 ProgressView()
             } else {
@@ -291,7 +291,7 @@ struct DetailView: View {
             playOptions = o
             if item.isMovie, let m = o.items.first { choose(m) } else { showEpisodes = true }
         } catch {
-            playError = error.localizedDescription
+            if !(error is CancellationError) { playError = error.localizedDescription }
         }
     }
 

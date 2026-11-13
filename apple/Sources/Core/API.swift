@@ -52,6 +52,10 @@ final class API {
         let data: Data, resp: URLResponse
         do {
             (data, resp) = try await session.data(for: req)
+        } catch let e as URLError where e.code == .cancelled {
+            throw CancellationError()  // the screen went away mid-request: not a network problem
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw APIError(status: 0, message: "Can't reach the server. Check that it's on and the address is right.")
         }
@@ -101,4 +105,9 @@ extension URL {
         guard let img, !img.isEmpty else { return nil }
         self.init(string: img)
     }
+}
+
+/// A request cut short because its screen went away. Most screens skip it; any that show it say this, not "Can't reach".
+extension CancellationError: @retroactive LocalizedError {
+    public var errorDescription: String? { "Cancelled." }
 }

@@ -45,6 +45,7 @@ final class Playback: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var statusObserver: NSKeyValueObservation?
     private var lastReport = Date.distantPast
+    private var starting = false
 
     init(item: PlayItem, upNext: [PlayItem]) {
         current = item
@@ -60,6 +61,9 @@ final class Playback: ObservableObject {
     }
 
     func start(from position: Double) async {
+        guard !starting, session == nil else { return }  // one stream at a time, even if the screen asks twice
+        starting = true
+        defer { starting = false }
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
@@ -77,8 +81,10 @@ final class Playback: ObservableObject {
             watch(playerItem)
             if position > 0 { await player.seek(to: CMTime(seconds: position, preferredTimescale: 600)) }
             player.play()
+        } catch is CancellationError {
+            return
         } catch {
-            self.error = error.localizedDescription
+            if player.currentItem == nil { self.error = error.localizedDescription }  // already playing: not worth an alert
         }
     }
 
@@ -165,7 +171,7 @@ struct PlayerScreen: View {
         PlayerController(player: playback.player)
             .ignoresSafeArea()
             .background(Color.black)
-            .task { await playback.start(from: start) }
+            .onAppear { Task { await playback.start(from: start) } }  // not tied to the view: a redraw mustn't cancel it
             .onDisappear { playback.close() }
             .onChange(of: playback.finished) { _, done in if done { dismiss() } }
             .alert("Can't play this", isPresented: Binding(get: { playback.error != nil }, set: { if !$0 { playback.error = nil } })) {

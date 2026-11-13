@@ -6,18 +6,54 @@ struct Picture: View {
     var label: String? = nil
 
     var body: some View {
-        AsyncImage(url: URL(img: url), transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
-            switch phase {
-            case .success(let img):
-                img.resizable().aspectRatio(contentMode: .fill)
-            default:
-                ZStack {
-                    Color.white.opacity(0.08)
-                    if let label { Text(label).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(6) }
+        // The image is an overlay on a clear box: the box takes whatever size it's offered, and the picture fills it
+        // without pushing it wider. (A fill image on its own reports its full natural width, and a wide backdrop
+        // would stretch the whole screen past the edges of a phone.)
+        Color.clear.overlay {
+            AsyncImage(url: URL(img: url), transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().aspectRatio(contentMode: .fill)
+                default:
+                    ZStack {
+                        Color.white.opacity(0.08)
+                        if let label { Text(label).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(6) }
+                    }
                 }
             }
         }
         .clipped()
+    }
+}
+
+/// Lays its children out left to right and wraps onto a new line when they don't fit (buttons on a narrow phone).
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 12
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, widest: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            let w = min(s.width, maxW)
+            if x > 0 && x + w > maxW { y += rowH + spacing; x = 0; rowH = 0 }
+            x += w + spacing
+            rowH = max(rowH, s.height)
+            widest = max(widest, x - spacing)
+        }
+        return CGSize(width: min(widest, maxW), height: y + rowH)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            let w = min(s.width, bounds.width)
+            if x > bounds.minX && x + w > bounds.maxX { y += rowH + spacing; x = bounds.minX; rowH = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: w, height: s.height))
+            x += w + spacing
+            rowH = max(rowH, s.height)
+        }
     }
 }
 
