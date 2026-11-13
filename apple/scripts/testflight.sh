@@ -33,6 +33,12 @@ for pair in "NuniFlix-iOS:iOS" "NuniFlix-TV:tvOS"; do
     echo "== $scheme: archiving"
     xcodebuild -quiet -project NuniFlix.xcodeproj -scheme "$scheme" -destination "generic/platform=$platform" \
       -archivePath "$OUT/$scheme.xcarchive" CODE_SIGNING_ALLOWED=NO archive
+    # An unsigned archive carries no entitlements, and export signing keeps only what's already there: stamp them on
+    # (e.g. aps-environment, or iPhone notifications fail with "no valid aps-environment entitlement").
+    if [ -f "$scheme.entitlements" ]; then
+      codesign --force --sign - --timestamp=none --generate-entitlement-der --entitlements "$scheme.entitlements" \
+        "$OUT/$scheme.xcarchive/Products/Applications/$scheme.app"
+    fi
   fi
   echo "== $scheme: signing and uploading"
   rm -rf "$OUT/$scheme"
