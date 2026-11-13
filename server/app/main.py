@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 import random
 
-import accounts, apns, arr, history, media, notify, office, player, store, subtitles, tmdb
+import accounts, apns, arr, history, library, media, notify, office, player, store, subtitles, tmdb
 
 VERSION = "0.4.0"
 COOKIE = "nf_token"
@@ -584,6 +584,28 @@ class PlayStart(BaseModel):
 @app.post("/api/play/start")
 def play_start(body: PlayStart, user=Depends(current_user)):
     return player.start(user, body.id, body.offset, body.platform, body.subtitle)
+
+
+# ---------- your library (library.py) ----------
+@app.get("/api/library/rows")
+def library_rows(genre: Optional[str] = Query(None, max_length=60), user=Depends(current_user)):
+    """What's on the person's own Plex/Jellyfin, laid out like a service page (or one genre of it)."""
+    return library.rows(user, genre)
+
+
+@app.get("/api/library")
+def library_page(type: Literal["movie", "tv", "all"] = "all", genre: Optional[str] = Query(None, max_length=60),
+                 page: int = Query(1, ge=1, le=500), user=Depends(current_user)):
+    return library.page(user, type, genre, page)
+
+
+@app.get("/api/art/{aid}", include_in_schema=False)
+def library_art(aid: str = Path(pattern=r"^[\w-]{12,24}$")):
+    """A Plex/Jellyfin poster or backdrop. No sign-in: the id is unguessable and maps to one image (library.py)."""
+    hit = library.art(aid)
+    if not hit:
+        raise HTTPException(404)
+    return Response(hit[0], media_type=hit[1], headers={"Cache-Control": "public, max-age=86400"})
 
 
 # ---------- subtitles (subtitles.py) ----------

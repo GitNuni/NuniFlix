@@ -213,6 +213,36 @@ def discover(provider, kind="movie", sort="popular", page=1, cat=None, resolve=T
 
 _rows_pool = ThreadPoolExecutor(6)
 
+
+def _dedupe(rows, keep=20, min_items=6):
+    """Each title once per page, in the first row it's in: popular titles belong to Popular *and* Action *and* Drama,
+    so without this every row starts with the same handful. Rows are fetched two pages deep so later ones can
+    still fill up; `page` says where a row's own "load more" carries on from."""
+    seen = set()
+    for r in rows:
+        fresh = []
+        for x in r["items"]:
+            k = (x["type"], x["tmdb"])
+            if k not in seen:
+                seen.add(k)  # only what the row actually shows counts as used
+                fresh.append(x)
+                if len(fresh) >= keep:
+                    break
+        r["items"] = fresh
+        r["page"] = 2
+    return [r for r in rows if len(r["items"]) >= min_items]
+
+
+def _two(fetch):
+    """Pages 1 and 2 of a row, together (cached like any page)."""
+    items = []
+    for n in (1, 2):
+        try:
+            items += fetch(n)["results"]
+        except TmdbError:
+            break
+    return items
+
 # Genres for the combined (movies + shows) service pages: (key, title, movie params | None, show params | None).
 # TMDB's show genres differ a little from its movie ones (no Horror or Thriller for shows, combined Sci-Fi & Fantasy).
 MIXED_GENRES = [
@@ -272,12 +302,9 @@ def rows_genre(provider, cat, name=""):
 
     def one(row):
         key, rtitle, kind, sort = row
-        try:
-            items = (discover_all(provider, sort, 1, cat) if kind == "all" else discover(provider, kind, sort, 1, cat, resolve=False))["results"]
-        except TmdbError:
-            items = []
+        items = _two(lambda n: discover_all(provider, sort, n, cat) if kind == "all" else discover(provider, kind, sort, n, cat, resolve=False))
         return {"key": key, "title": rtitle, "type": kind, "sort": sort, "cat": cat, "items": items}
-    out = [r for r in _rows_pool.map(one, spec) if len(r["items"]) >= 4]
+    out = _dedupe(list(_rows_pool.map(one, spec)), min_items=4)
     hero = next((x for r in out[:1] for x in r["items"] if x.get("backdrop") and x.get("overview")), None)
     return {"hero": hero, "rows": out}
 
@@ -292,12 +319,9 @@ def rows_all(provider, name=""):
 
     def one(row):
         key, title, kind, sort, cat = row
-        try:
-            items = (discover_all(provider, sort, 1, cat) if kind == "all" else discover(provider, kind, sort, 1, cat, resolve=False))["results"]
-        except TmdbError:
-            items = []
+        items = _two(lambda n: discover_all(provider, sort, n, cat) if kind == "all" else discover(provider, kind, sort, n, cat, resolve=False))
         return {"key": key, "title": title, "type": kind, "sort": sort, "cat": cat, "items": items}
-    out = [r for r in _rows_pool.map(one, spec) if len(r["items"]) >= 6]
+    out = _dedupe(list(_rows_pool.map(one, spec)))
     pick = sorted(out[:2], key=lambda r: r["key"] != "originals")
     hero = next((x for r in pick for x in r["items"] if x.get("backdrop") and x.get("overview")), None)
     return {"hero": hero, "rows": out, "genres": [{"key": k, "title": t} for k, t, _, _ in MIXED_GENRES]}
@@ -313,12 +337,9 @@ def rows(provider, kind, name=""):
 
     def one(row):
         key, title, sort, cat = row
-        try:
-            items = discover(provider, kind, sort, 1, cat, resolve=False)["results"]
-        except TmdbError:
-            items = []
+        items = _two(lambda n: discover(provider, kind, sort, n, cat, resolve=False))
         return {"key": key, "title": title, "type": kind, "sort": sort, "cat": cat, "items": items}
-    out = [r for r in _rows_pool.map(one, spec) if len(r["items"]) >= 6]
+    out = _dedupe(list(_rows_pool.map(one, spec)))
     # feature the service's own show when it has originals, like the real apps do
     pick = sorted(out[:2], key=lambda r: r["key"] != "originals")
     hero = next((x for r in pick for x in r["items"] if x.get("backdrop") and x.get("overview")), None)

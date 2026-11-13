@@ -125,14 +125,17 @@ struct ItemRow: View {
     var more: ((Int) async -> [Item])? = nil
     @State private var items: [Item]
 
-    init(title: String, theme: ServiceTheme, items: [Item], more: ((Int) async -> [Item])? = nil) {
+    init(title: String, theme: ServiceTheme, items: [Item], startPage: Int? = nil, more: ((Int) async -> [Item])? = nil) {
         self.title = title
         self.theme = theme
         self.source = items
         self.more = more
+        self.startPage = startPage ?? 1
         _items = State(initialValue: items)
+        _page = State(initialValue: startPage ?? 1)
     }
-    @State private var page = 1
+    private let startPage: Int
+    @State private var page: Int
     @State private var done = false
     @State private var loading = false
 
@@ -154,17 +157,21 @@ struct ItemRow: View {
             .scrollClipDisabled()
         }
         // new titles from the parent (a reload): start over from them, so a row never keeps showing stale ones
-        .onChange(of: source.map(\.id)) { _, _ in items = source; page = 1; done = false }
+        .onChange(of: source.map(\.id)) { _, _ in items = source; page = startPage; done = false }
     }
 
     private func loadMore() async {
         guard let more, !done, !loading else { return }
         loading = true
-        let next = await more(page + 1)
-        let seen = Set(items.map(\.id))
-        let fresh = next.filter { !seen.contains($0.id) }
-        if fresh.isEmpty { done = true } else { items += fresh; page += 1 }
-        loading = false
+        defer { loading = false }
+        for _ in 0..<3 {  // a page of nothing but repeats: try the next one before giving up
+            let next = await more(page + 1)
+            if next.isEmpty { done = true; return }
+            page += 1
+            let seen = Set(items.map(\.id))
+            let fresh = next.filter { !seen.contains($0.id) }
+            if !fresh.isEmpty { items += fresh; return }
+        }
     }
 }
 
@@ -195,6 +202,8 @@ enum Route: Hashable {
     case requests
     case browse(Provider, String, [String: String])   // a paged grid: title + query (type/sort/cat)
     case section(Provider, String, String, String?)    // a service-style page: title, type, genre
+    case library(String?)                              // your Plex/Jellyfin, or one genre of it
+    case libraryAll(String, [String: String])          // everything in it (grid): title + query (type/genre)
     case yourflix
 }
 

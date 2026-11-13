@@ -111,10 +111,12 @@ struct YourFlixTile: View {
     }
 }
 
-/// YourFlix: everything you've requested, laid out like a service: ready to watch, on the way, waiting for approval.
+/// YourFlix, your own channel: continue watching, your requests (ready, on the way, waiting), then a door into
+/// your Plex/Jellyfin library and its genres.
 struct YourFlixView: View {
     @EnvironmentObject var model: AppModel
     @State private var requests: [MyRequest] = []
+    @State private var lib: RowsPage?
     @State private var loaded = false
     @State private var error: String?
 
@@ -144,7 +146,7 @@ struct YourFlixView: View {
             VStack(alignment: .leading, spacing: Metrics.spacing) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(theme.uppercase ? "YOURFLIX" : "YourFlix").font(theme.font(Metrics.rowTitleSize * 2)).foregroundStyle(theme.brandColor)
-                    Text(model.me.map { "Everything \($0.name.split(separator: " ").first.map(String.init) ?? $0.name) asked for" } ?? "Everything you asked for")
+                    Text(model.me.map { "\($0.name.split(separator: " ").first.map(String.init) ?? $0.name)'s channel" } ?? "Your channel")
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, Metrics.gutter)
@@ -152,12 +154,30 @@ struct YourFlixView: View {
                     ErrorView(message: error) { Task { await load() } }
                 } else if !loaded {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 300)
-                } else if rows.isEmpty {
-                    Text("Nothing requested yet. Find something on a service and choose Request.")
-                        .foregroundStyle(.secondary).padding(.horizontal, Metrics.gutter)
                 } else {
+                    if let resume = lib?.rows.first(where: { $0.key == "resume" }) {
+                        ItemRow(title: resume.title, theme: theme, items: resume.items)
+                    }
                     ForEach(rows, id: \.0) { title, list in
                         ItemRow(title: "\(title)  ·  \(list.count)", theme: theme, items: list)
+                    }
+                    if rows.isEmpty && lib == nil {
+                        Text("Nothing requested yet. Find something on a service and choose Request.")
+                            .foregroundStyle(.secondary).padding(.horizontal, Metrics.gutter)
+                    }
+                    if let lib {
+                        LibraryDoor(name: lib.name ?? "Your library", hero: lib.hero ?? lib.rows.flatMap(\.items).first { $0.backdrop != nil }, theme: theme)
+                        if let genres = lib.genres, !genres.isEmpty {
+                            VStack(alignment: .leading, spacing: Metrics.spacing / 2) {
+                                theme.heading("Your genres").padding(.horizontal, Metrics.gutter)
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing / 2)], spacing: Metrics.spacing / 2) {
+                                    ForEach(Array(genres.enumerated()), id: \.element.key) { i, g in
+                                        NavigationLink(value: Route.library(g.key)) { GenreTile(title: g.title, index: i, theme: theme) }.cardButton()
+                                    }
+                                }
+                                .padding(.horizontal, Metrics.gutter)
+                            }
+                        }
                     }
                 }
             }
@@ -172,13 +192,139 @@ struct YourFlixView: View {
     }
 
     private func load() async {
-        do {
-            requests = try await (API.shared.get("/requests", ["scope": "mine"]) as Requests).requests
-            error = nil
-        } catch {
-            if !(error is CancellationError) { self.error = error.localizedDescription }
-        }
+        async let reqs: Requests? = try? API.shared.get("/requests", ["scope": "mine"])
+        async let library: RowsPage? = try? API.shared.get("/library/rows")  // nil when no Plex/Jellyfin is linked
+        let (r, l) = await (reqs, library)
+        if let r { requests = r.requests; error = nil } else if !loaded && l == nil { error = "Couldn't load YourFlix. Try again." }
+        lib = l
         loaded = true
+    }
+}
+
+/// The big "everything on your Plex/Jellyfin" tile.
+struct LibraryDoor: View {
+    var name: String
+    var hero: Item?
+    var theme: ServiceTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Metrics.spacing / 2) {
+            theme.heading("Browse").padding(.horizontal, Metrics.gutter)
+            NavigationLink(value: Route.library(nil)) {
+                ZStack(alignment: .bottomLeading) {
+                    Picture(url: hero?.backdrop ?? hero?.poster)
+                    LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .center, endPoint: .bottom)
+                    HStack(spacing: 12) {
+                        Image(systemName: "server.rack").font(.title2).foregroundStyle(.white)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Everything on \(name)").font(theme.font(Metrics.rowTitleSize * 1.2, .heavy)).foregroundStyle(.white)
+                            Text("Ready to watch right now").font(.callout).foregroundStyle(.white.opacity(0.8))
+                        }
+                        Image(systemName: "chevron.right").font(.headline).foregroundStyle(.white.opacity(0.8))
+                    }
+                    .padding(Metrics.spacing / 2)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: Metrics.serviceTile.height * 1.8)
+                .clipShape(RoundedRectangle(cornerRadius: max(theme.corner, 8), style: .continuous))
+            }
+            .cardButton()
+            .padding(.horizontal, Metrics.gutter)
+        }
+        .padding(.top, Metrics.spacing / 2)
+    }
+}
+
+/// A coloured genre tile (service genres and library genres share it).
+struct GenreTile: View {
+    var title: String
+    var index: Int
+    var theme: ServiceTheme
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(colors: [theme.accent.opacity(0.95), theme.accent.opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .hueRotation(.degrees(Double(index) * 23))
+            Text(theme.uppercase ? title.uppercased() : title)
+                .font(theme.font(Metrics.rowTitleSize * 0.9, .bold)).foregroundStyle(.white).shadow(radius: 3)
+                .padding(Metrics.spacing / 2)
+        }
+        .frame(height: Metrics.serviceTile.height)
+        .clipShape(RoundedRectangle(cornerRadius: max(theme.corner, 8), style: .continuous))
+    }
+}
+
+/// Your Plex/Jellyfin library (or one genre of it), laid out like a service page.
+struct LibraryPage: View {
+    @EnvironmentObject var model: AppModel
+    var genre: String?
+    @State private var page: RowsPage?
+    @State private var error: String?
+
+    var theme: ServiceTheme { var t = model.appTheme; t.tile = .poster; return t }
+    private var name: String { page?.name ?? "your library" }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Metrics.spacing) {
+                HStack(spacing: Metrics.spacing / 2) {
+                    Image(systemName: "server.rack").font(.title2)
+                    Text(genre ?? "Everything").font(theme.font(Metrics.rowTitleSize * 1.4, .heavy))
+                    Text("on \(name)").font(.title3).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, Metrics.gutter)
+                if let error {
+                    ErrorView(message: error) { Task { await load() } }
+                } else if let page {
+                    if let hero = page.hero { Hero(item: hero, theme: theme) }
+                    ForEach(page.rows) { row in
+                        ItemRow(title: row.title, theme: theme, items: row.items, startPage: row.page, more: { n in await more(row, n) })
+                    }
+                    NavigationLink(value: Route.libraryAll(genre ?? "Everything", ["type": "all"].merging(genre.map { ["genre": $0] } ?? [:]) { a, _ in a })) {
+                        Label("See everything", systemImage: "square.grid.3x3.fill")
+                            .font(.headline).padding(.horizontal, 30).padding(.vertical, 16)
+                    }
+                    .padding(.horizontal, Metrics.gutter)
+                    if let genres = page.genres, !genres.isEmpty {
+                        VStack(alignment: .leading, spacing: Metrics.spacing / 2) {
+                            theme.heading("Genres").padding(.horizontal, Metrics.gutter)
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing / 2)], spacing: Metrics.spacing / 2) {
+                                ForEach(Array(genres.enumerated()), id: \.element.key) { i, g in
+                                    NavigationLink(value: Route.library(g.key)) { GenreTile(title: g.title, index: i, theme: theme) }.cardButton()
+                                }
+                            }
+                            .padding(.horizontal, Metrics.gutter)
+                        }
+                    }
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 400)
+                }
+            }
+            .padding(.vertical, Metrics.spacing)
+        }
+        .background(theme.backgroundView)
+        .onAppear { model.theme = model.appTheme }
+        .task { if page == nil { await load() } }
+        #if os(iOS)
+        .navigationTitle(genre ?? "Your library")
+        #endif
+    }
+
+    private func load() async {
+        error = nil
+        var q: [String: String] = [:]
+        if let genre { q["genre"] = genre }
+        do { page = try await API.shared.get("/library/rows", q) }
+        catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+    }
+
+    private func more(_ row: Row, _ n: Int) async -> [Item] {
+        guard row.key != "resume" else { return [] }
+        var q = ["type": row.type ?? "all", "page": String(n)]
+        if let g = row.cat ?? genre { q["genre"] = g }
+        let d: DiscoverPage? = try? await API.shared.get("/library", q)
+        guard let d, d.page <= d.totalPages else { return [] }
+        return d.results
     }
 }
 
@@ -205,7 +351,7 @@ struct ServiceHomeView: View {
                     } else if let page {
                         if let hero = page.hero { Hero(item: hero, theme: theme) }
                         ForEach(page.rows.filter { !Self.tileKeys.contains($0.key) }) { row in
-                            ItemRow(title: row.title, theme: theme, items: row.items, more: { n in await more(row, n) })
+                            ItemRow(title: row.title, theme: theme, items: row.items, startPage: row.page, more: { n in await more(row, n) })
                         }
                         // Movies / Shows: big doors into everything of that kind on the service
                         let doors = page.rows.filter { Self.tileKeys.contains($0.key) }
@@ -379,7 +525,7 @@ struct SectionPage: View {
                 } else if let page {
                     if let hero = page.hero { Hero(item: hero, theme: theme) }
                     ForEach(page.rows) { row in
-                        ItemRow(title: row.title, theme: theme, items: row.items, more: { n in await more(row, n) })
+                        ItemRow(title: row.title, theme: theme, items: row.items, startPage: row.page, more: { n in await more(row, n) })
                     }
                     NavigationLink(value: Route.browse(provider, title, ["type": type, "sort": "popular"].merging(cat.map { ["cat": $0] } ?? [:]) { a, _ in a })) {
                         Label("See everything", systemImage: "square.grid.3x3.fill")
@@ -420,22 +566,24 @@ struct SectionPage: View {
 /// Everything of one kind on a service (all movies, all shows, one genre), loading more as you get near the end.
 struct BrowseGridView: View {
     @EnvironmentObject var model: AppModel
-    var provider: Provider
+    var provider: Provider?       // nil: your own Plex/Jellyfin library
     var title: String
     var query: [String: String]
+    var libraryName = "your library"
     @State private var items: [Item] = []
     @State private var page = 0
     @State private var total = 1
     @State private var loading = false
     @State private var error: String?
 
-    var theme: ServiceTheme { ServiceTheme.of(provider.name) }
+    var theme: ServiceTheme { provider.map { ServiceTheme.of($0.name) } ?? { var t = model.appTheme; t.tile = .poster; return t }() }
+    private var endpoint: String { provider.map { "/browse/provider/\($0.id)" } ?? "/library" }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Metrics.spacing) {
                 #if os(tvOS)
-                Text("\(title) on \(provider.name)").font(theme.font(Metrics.rowTitleSize * 1.4, .heavy))
+                Text("\(title) on \(provider?.name ?? libraryName)").font(theme.font(Metrics.rowTitleSize * 1.4, .heavy))
                     .padding(.horizontal, Metrics.gutter)
                 #endif
                 ItemGrid(items: items, theme: theme) { Task { await next() } }
@@ -465,7 +613,7 @@ struct BrowseGridView: View {
         q["page"] = String(page + 1)
         q["quick"] = "true"
         do {
-            let d: DiscoverPage = try await API.shared.get("/browse/provider/\(provider.id)", q)
+            let d: DiscoverPage = try await API.shared.get(endpoint, q)
             let seen = Set(items.map(\.id))
             items += d.results.filter { !seen.contains($0.id) }
             page = d.page

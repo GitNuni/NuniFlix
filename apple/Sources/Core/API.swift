@@ -11,7 +11,9 @@ struct APIError: LocalizedError {
 final class API {
     static let shared = API()
 
-    var base: URL?
+    var base: URL? { didSet { API.imageBase = base?.absoluteString } }
+    /// For images the server hands out as paths (/api/art/…): read from any thread when building image URLs.
+    nonisolated(unsafe) static var imageBase: String?
     var token: String?
     /// Called when the server says the session is gone (signed out elsewhere, or 90 days unused).
     var onUnauthorized: (@MainActor () -> Void)?
@@ -103,6 +105,7 @@ final class API {
 extension URL {
     init?(img: String?) {
         guard let img, !img.isEmpty else { return nil }
+        if img.hasPrefix("/"), let base = API.imageBase { self.init(string: base + img); return }  // Plex/Jellyfin art via NuniFlix
         self.init(string: img)
     }
 }

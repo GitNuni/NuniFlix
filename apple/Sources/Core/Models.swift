@@ -96,6 +96,7 @@ struct Row: Decodable, Identifiable {
     var sort: String
     var cat: String?
     var items: [Item]
+    var page: Int?      // the last page the server already used for this row: "load more" carries on after it
     var id: String { key }
 }
 
@@ -108,6 +109,7 @@ struct RowsPage: Decodable {
     var hero: Item?
     var rows: [Row]
     var genres: [GenreRef]?
+    var name: String?   // the library page: "Plex" / "Jellyfin"
 }
 
 struct DiscoverPage: Decodable {
