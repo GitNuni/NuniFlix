@@ -203,9 +203,12 @@ struct ServiceHomeView: View {
                         ErrorView(message: error) { Task { await load() } }
                     } else if let page {
                         if let hero = page.hero { Hero(item: hero, theme: theme) }
-                        ForEach(page.rows) { row in
+                        ForEach(page.rows.filter { !Self.tileKeys.contains($0.key) }) { row in
                             ItemRow(title: row.title, theme: theme, items: row.items, more: { n in await more(row, n) })
                         }
+                        // Movies / Shows: big doors into everything of that kind on the service
+                        let doors = page.rows.filter { Self.tileKeys.contains($0.key) }
+                        if !doors.isEmpty { BrowseDoors(provider: provider, rows: doors, theme: theme) }
                         if let genres = page.genres, !genres.isEmpty {
                             GenreGrid(provider: provider, genres: genres, theme: theme)
                         }
@@ -232,6 +235,8 @@ struct ServiceHomeView: View {
         .toolbarBackground(theme.background[0], for: .navigationBar)
         #endif
     }
+
+    static let tileKeys: Set<String> = ["movies", "shows"]
 
     private var header: some View {
         HStack(spacing: Metrics.spacing / 2) {
@@ -289,7 +294,7 @@ struct GenreGrid: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing / 2)],
                       spacing: Metrics.spacing / 2) {
                 ForEach(Array(genres.enumerated()), id: \.element.key) { i, g in
-                    NavigationLink(value: Route.genre(provider, g)) {
+                    NavigationLink(value: Route.browse(provider, g.title, ["type": "all", "cat": g.key])) {
                         ZStack(alignment: .bottomLeading) {
                             LinearGradient(colors: [theme.accent.opacity(0.95), theme.accent.opacity(0.35)],
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -311,11 +316,48 @@ struct GenreGrid: View {
     }
 }
 
-/// One genre on one service: movies and shows together, more as you scroll.
-struct GenreView: View {
+/// Movies / Shows as two wide tiles with a picture from the service, each opening everything of that kind.
+struct BrowseDoors: View {
+    var provider: Provider
+    var rows: [Row]
+    var theme: ServiceTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Metrics.spacing / 2) {
+            theme.heading("Browse").padding(.horizontal, Metrics.gutter)
+            HStack(spacing: Metrics.spacing / 2) {
+                ForEach(rows) { row in
+                    let query = ["type": row.type ?? (row.key == "movies" ? "movie" : "tv"), "sort": row.sort]
+                    NavigationLink(value: Route.browse(provider, "All \(row.title.lowercased())", query)) {
+                        ZStack(alignment: .bottomLeading) {
+                            Picture(url: row.items.first(where: { $0.backdrop != nil })?.backdrop)
+                            LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .center, endPoint: .bottom)
+                            HStack {
+                                Text(theme.uppercase ? row.title.uppercased() : row.title)
+                                    .font(theme.font(Metrics.rowTitleSize * 1.3, .heavy)).foregroundStyle(.white)
+                                Image(systemName: "chevron.right").font(.headline).foregroundStyle(.white.opacity(0.8))
+                            }
+                            .padding(Metrics.spacing / 2)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Metrics.serviceTile.height * 1.6)
+                        .clipShape(RoundedRectangle(cornerRadius: max(theme.corner, 8), style: .continuous))
+                    }
+                    .cardButton()
+                }
+            }
+            .padding(.horizontal, Metrics.gutter)
+        }
+        .padding(.top, Metrics.spacing / 2)
+    }
+}
+
+/// Everything of one kind on a service (all movies, all shows, one genre), loading more as you get near the end.
+struct BrowseGridView: View {
     @EnvironmentObject var model: AppModel
     var provider: Provider
-    var genre: GenreRef
+    var title: String
+    var query: [String: String]
     @State private var items: [Item] = []
     @State private var page = 0
     @State private var total = 1
@@ -328,15 +370,15 @@ struct GenreView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Metrics.spacing) {
                 #if os(tvOS)
-                Text("\(genre.title) on \(provider.name)").font(theme.font(Metrics.rowTitleSize * 1.4, .heavy))
+                Text("\(title) on \(provider.name)").font(theme.font(Metrics.rowTitleSize * 1.4, .heavy))
                     .padding(.horizontal, Metrics.gutter)
                 #endif
-                if let error { ErrorView(message: error) { Task { await next() } } }
-                ItemGrid(items: items, theme: theme)
-                if page < total {
+                ItemGrid(items: items, theme: theme) { Task { await next() } }
+                if let error {
+                    ErrorView(message: error) { Task { await next() } }
+                } else if loading {
                     ProgressView().frame(maxWidth: .infinity).padding()
-                        .onAppear { Task { await next() } }
-                } else if items.isEmpty {
+                } else if items.isEmpty && page >= total {
                     Text("Nothing here right now.").foregroundStyle(.secondary).frame(maxWidth: .infinity).padding()
                 }
             }
@@ -344,8 +386,9 @@ struct GenreView: View {
         }
         .background(theme.backgroundView)
         .onAppear { model.theme = theme }
+        .task { if items.isEmpty { await next() } }
         #if os(iOS)
-        .navigationTitle(genre.title)
+        .navigationTitle(title)
         #endif
     }
 
@@ -353,14 +396,18 @@ struct GenreView: View {
         guard !loading, page < total else { return }
         loading = true
         defer { loading = false }
+        var q = query
+        q["page"] = String(page + 1)
+        q["quick"] = "true"
         do {
-            let d: DiscoverPage = try await API.shared.get("/browse/provider/\(provider.id)",
-                                                           ["type": "all", "cat": genre.key, "page": String(page + 1), "quick": "true"])
+            let d: DiscoverPage = try await API.shared.get("/browse/provider/\(provider.id)", q)
             let seen = Set(items.map(\.id))
             items += d.results.filter { !seen.contains($0.id) }
             page = d.page
             total = d.totalPages
             error = nil
+            // a page that was all repeats: go straight on to the next so the grid doesn't stall
+            if d.results.allSatisfy({ seen.contains($0.id) }) && page < total { loading = false; await next() }
         } catch {
             if !(error is CancellationError) { self.error = error.localizedDescription }
         }

@@ -172,12 +172,15 @@ struct ItemRow: View {
 struct ItemGrid: View {
     var items: [Item]
     var theme: ServiceTheme
+    /// Called when one of the last few tiles comes on screen (load the next page).
+    var nearEnd: (() -> Void)? = nil
 
     var body: some View {
         let size = theme.tile == .wide ? Metrics.wide : Metrics.poster
         LazyVGrid(columns: [GridItem(.adaptive(minimum: size.width), spacing: Metrics.spacing / 2)], spacing: Metrics.spacing) {
-            ForEach(items) { it in
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, it in
                 NavigationLink(value: Route.item(it)) { ItemCard(item: it, theme: theme) }.cardButton()
+                    .onAppear { if i >= items.count - 8 { nearEnd?() } }
             }
         }
         .padding(.horizontal, Metrics.gutter)
@@ -190,7 +193,7 @@ enum Route: Hashable {
     case item(Item)
     case search(Provider?)
     case requests
-    case genre(Provider, GenreRef)
+    case browse(Provider, String, [String: String])   // a paged grid: title + query (type/sort/cat)
     case yourflix
 }
 
