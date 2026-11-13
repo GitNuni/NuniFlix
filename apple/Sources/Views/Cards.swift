@@ -194,6 +194,7 @@ enum Route: Hashable {
     case search(Provider?)
     case requests
     case browse(Provider, String, [String: String])   // a paged grid: title + query (type/sort/cat)
+    case section(Provider, String, String, String?)    // a service-style page: title, type, genre
     case yourflix
 }
 

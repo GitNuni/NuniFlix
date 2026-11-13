@@ -193,6 +193,9 @@ def discover(provider, kind="movie", sort="popular", page=1, cat=None, resolve=T
         params.update(extra)
     elif cat:
         extra = next((g[2] for g in GENRES[kind] if g[0] == cat), None)
+        if extra is None:  # a combined-page genre (MIXED_GENRES), asked for one kind: its movie or show half
+            mg = next((g for g in MIXED_GENRES if g[0] == cat), None)
+            extra = (mg[2] if kind == "movie" else mg[3]) if mg else None
         if extra is None:
             raise TmdbError("Unknown category.")
         params.update(extra)
@@ -253,6 +256,32 @@ def discover_all(provider, sort="popular", page=1, cat=None, resolve=False):
             "total_pages": max(p["total_pages"] for p in parts)}
 
 
+def rows_genre(provider, cat, name=""):
+    """One genre on a service, laid out like a service page: popular / new / top rated (movies and shows together),
+    then that genre's movies and its shows."""
+    g = next((x for x in MIXED_GENRES if x[0] == cat), None)
+    if not g:
+        raise TmdbError("Unknown category.")
+    _, title, movie_q, tv_q = g
+    spec = [("popular", f"Popular {title.lower()}" if title[0].isupper() else title, "all", "popular"),
+            ("new", "New releases", "all", "new"), ("top", "Top rated", "all", "top")]
+    if movie_q:
+        spec.append(("movies", "Movies", "movie", "popular"))
+    if tv_q:
+        spec.append(("shows", "Shows", "tv", "popular"))
+
+    def one(row):
+        key, rtitle, kind, sort = row
+        try:
+            items = (discover_all(provider, sort, 1, cat) if kind == "all" else discover(provider, kind, sort, 1, cat, resolve=False))["results"]
+        except TmdbError:
+            items = []
+        return {"key": key, "title": rtitle, "type": kind, "sort": sort, "cat": cat, "items": items}
+    out = [r for r in _rows_pool.map(one, spec) if len(r["items"]) >= 4]
+    hero = next((x for r in out[:1] for x in r["items"] if x.get("backdrop") and x.get("overview")), None)
+    return {"hero": hero, "rows": out}
+
+
 def rows_all(provider, name=""):
     """A service's home screen with movies and shows together: mixed rows, then Movies and Shows rows, then genres."""
     spec = [("popular", f"Popular on {name}".strip() if name else "Popular", "all", "popular", None)]
@@ -288,7 +317,7 @@ def rows(provider, kind, name=""):
             items = discover(provider, kind, sort, 1, cat, resolve=False)["results"]
         except TmdbError:
             items = []
-        return {"key": key, "title": title, "sort": sort, "cat": cat, "items": items}
+        return {"key": key, "title": title, "type": kind, "sort": sort, "cat": cat, "items": items}
     out = [r for r in _rows_pool.map(one, spec) if len(r["items"]) >= 6]
     # feature the service's own show when it has originals, like the real apps do
     pick = sorted(out[:2], key=lambda r: r["key"] != "originals")

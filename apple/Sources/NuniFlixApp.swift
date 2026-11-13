@@ -59,6 +59,7 @@ struct MainView: View {
                     case .search(let p): SearchView(provider: p)
                     case .requests: RequestsView()
                     case .browse(let p, let title, let q): BrowseGridView(provider: p, title: title, query: q)
+                    case .section(let p, let title, let type, let cat): SectionPage(provider: p, title: title, type: type, cat: cat)
                     case .yourflix: YourFlixView()
                     }
                 }

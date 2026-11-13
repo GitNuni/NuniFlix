@@ -925,11 +925,16 @@ def browse_search(q: str, pid: str = Path(pattern=r"^\d+(\|\d+){0,4}$"), type: O
 
 
 @app.get("/api/browse/provider/{pid}/rows")
-def browse_rows(pid: str = Path(pattern=r"^\d+(\|\d+){0,4}$"), type: Literal["movie", "tv", "all"] = "tv", user=Depends(current_user)):
-    """A service's home screen. type=all: movies and shows together, plus its genres (the Apple TV app)."""
+def browse_rows(pid: str = Path(pattern=r"^\d+(\|\d+){0,4}$"), type: Literal["movie", "tv", "all"] = "tv",
+                cat: Optional[str] = Query(None, pattern=r"^[a-z]{2,20}$"), user=Depends(current_user)):
+    """A service's home screen. type=all: movies and shows together, plus its genres (the Apple TV app);
+    type=all&cat=<genre>: that genre laid out the same way; type=movie/tv: just movies or shows, with genre rows."""
     prov = next((p for p in tmdb.providers() if p["id"] == pid), None)
     name = (prov or {}).get("name", "")
-    d = tmdb.rows_all(pid, name) if type == "all" else tmdb.rows(pid, type, name)
+    if type == "all":
+        d = tmdb.rows_genre(pid, cat, name) if cat else tmdb.rows_all(pid, name)
+    else:
+        d = tmdb.rows(pid, type, name)
     for r in d["rows"]:
         _overlay_requests(r["items"])
     return d | {"provider": prov}

@@ -196,7 +196,9 @@ struct ServiceHomeView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: Metrics.spacing) {
+                // A plain VStack, not a lazy one: the lazy one recycled the top bar (logo, Search) further down the page.
+                // The rows scroll sideways lazily on their own, so nothing is lost.
+                VStack(alignment: .leading, spacing: Metrics.spacing) {
                     header.id("top")
                     if let error {
                         ErrorView(message: error) { Task { await load() } }
@@ -293,7 +295,7 @@ struct GenreGrid: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing / 2)],
                       spacing: Metrics.spacing / 2) {
                 ForEach(Array(genres.enumerated()), id: \.element.key) { i, g in
-                    NavigationLink(value: Route.browse(provider, g.title, ["type": "all", "cat": g.key])) {
+                    NavigationLink(value: Route.section(provider, g.title, "all", g.key)) {
                         ZStack(alignment: .bottomLeading) {
                             LinearGradient(colors: [theme.accent.opacity(0.95), theme.accent.opacity(0.35)],
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -326,8 +328,7 @@ struct BrowseDoors: View {
             theme.heading("Browse").padding(.horizontal, Metrics.gutter)
             HStack(spacing: Metrics.spacing / 2) {
                 ForEach(rows) { row in
-                    let query = ["type": row.type ?? (row.key == "movies" ? "movie" : "tv"), "sort": row.sort]
-                    NavigationLink(value: Route.browse(provider, "All \(row.title.lowercased())", query)) {
+                    NavigationLink(value: Route.section(provider, row.title, row.type ?? (row.key == "movies" ? "movie" : "tv"), nil)) {
                         ZStack(alignment: .bottomLeading) {
                             Picture(url: row.items.first(where: { $0.backdrop != nil })?.backdrop)
                             LinearGradient(colors: [.clear, .black.opacity(0.85)], startPoint: .center, endPoint: .bottom)
@@ -348,6 +349,71 @@ struct BrowseDoors: View {
             .padding(.horizontal, Metrics.gutter)
         }
         .padding(.top, Metrics.spacing / 2)
+    }
+}
+
+/// Movies, Shows or one genre on a service, laid out like the service: a banner, rows (Popular, New releases, Top rated,
+/// genre rows…), then "See everything" for the full grid.
+struct SectionPage: View {
+    @EnvironmentObject var model: AppModel
+    var provider: Provider
+    var title: String
+    var type: String          // movie / tv / all
+    var cat: String?          // a genre (with type all)
+    @State private var page: RowsPage?
+    @State private var error: String?
+
+    var theme: ServiceTheme { ServiceTheme.of(provider.name) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Metrics.spacing) {
+                HStack(spacing: Metrics.spacing / 2) {
+                    Picture(url: provider.logo).frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    Text(theme.uppercase ? title.uppercased() : title).font(theme.font(Metrics.rowTitleSize * 1.4, .heavy))
+                    Text("on \(provider.name)").font(.title3).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, Metrics.gutter)
+                if let error {
+                    ErrorView(message: error) { Task { await load() } }
+                } else if let page {
+                    if let hero = page.hero { Hero(item: hero, theme: theme) }
+                    ForEach(page.rows) { row in
+                        ItemRow(title: row.title, theme: theme, items: row.items, more: { n in await more(row, n) })
+                    }
+                    NavigationLink(value: Route.browse(provider, title, ["type": type, "sort": "popular"].merging(cat.map { ["cat": $0] } ?? [:]) { a, _ in a })) {
+                        Label("See everything", systemImage: "square.grid.3x3.fill")
+                            .font(.headline).padding(.horizontal, 30).padding(.vertical, 16)
+                    }
+                    .padding(.horizontal, Metrics.gutter)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 400)
+                }
+            }
+            .padding(.vertical, Metrics.spacing)
+        }
+        .background(theme.backgroundView)
+        .onAppear { model.theme = theme }
+        .task { if page == nil { await load() } }
+        #if os(iOS)
+        .navigationTitle(title)
+        #endif
+    }
+
+    private func load() async {
+        error = nil
+        var q = ["type": type]
+        if let cat { q["cat"] = cat }
+        do { page = try await API.shared.get("/browse/provider/\(provider.id)/rows", q) }
+        catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+    }
+
+    private func more(_ row: Row, _ n: Int) async -> [Item] {
+        var q = ["type": row.type ?? type, "sort": row.sort, "page": String(n), "quick": "true"]
+        if let c = row.cat ?? cat { q["cat"] = c }
+        let d: DiscoverPage? = try? await API.shared.get("/browse/provider/\(provider.id)", q)
+        guard let d, d.page <= d.totalPages else { return [] }
+        return d.results
     }
 }
 
