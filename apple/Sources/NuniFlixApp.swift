@@ -56,6 +56,7 @@ struct MainView: View {
                     case .search(let p): SearchView(provider: p)
                     case .requests: RequestsView()
                     case .genre(let p, let g): GenreView(provider: p, genre: g)
+                    case .yourflix: YourFlixView()
                     }
                 }
         }

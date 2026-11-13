@@ -191,6 +191,7 @@ enum Route: Hashable {
     case search(Provider?)
     case requests
     case genre(Provider, GenreRef)
+    case yourflix
 }
 
 struct ErrorView: View {

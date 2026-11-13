@@ -34,6 +34,7 @@ struct ServicesView: View {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 300)
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing)], spacing: Metrics.spacing) {
+                    NavigationLink(value: Route.yourflix) { YourFlixTile() }.cardButton()
                     ForEach(providers) { p in
                         NavigationLink(value: Route.service(p)) { ServiceTile(provider: p) }.cardButton()
                     }
@@ -84,6 +85,101 @@ struct ServiceTile: View {
         }
         .frame(width: Metrics.serviceTile.width, height: Metrics.serviceTile.height)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// The first "channel": your own requests.
+struct YourFlixTile: View {
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        let t = model.appTheme
+        ZStack {
+            LinearGradient(colors: [t.accent, t.accent.opacity(0.35), t.background[0]], startPoint: .topLeading, endPoint: .bottomTrailing)
+            HStack(spacing: 14) {
+                Image(systemName: "person.crop.rectangle.stack.fill")
+                    .font(.system(size: Metrics.serviceTile.height * 0.3)).foregroundStyle(.white)
+                    .frame(width: Metrics.serviceTile.height * 0.55)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t.uppercase ? "YOURFLIX" : "YourFlix").font(t.font(Metrics.rowTitleSize * 0.85, .black)).foregroundStyle(.white)
+                    Text("What you asked for").font(.caption).foregroundStyle(.white.opacity(0.8))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(width: Metrics.serviceTile.width, height: Metrics.serviceTile.height)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// YourFlix: everything you've requested, laid out like a service: ready to watch, on the way, waiting for approval.
+struct YourFlixView: View {
+    @EnvironmentObject var model: AppModel
+    @State private var requests: [MyRequest] = []
+    @State private var loaded = false
+    @State private var error: String?
+
+    var theme: ServiceTheme { var t = model.appTheme; t.tile = .poster; return t }
+
+    private func items(_ pick: (MyRequest) -> Bool) -> [Item] {
+        var seen = Set<String>()
+        return requests.filter(pick).compactMap { r in
+            var it = r.asItem
+            it.status = r.status == "pending" ? "pending" : (r.mediaStatus ?? "processing")
+            it.progress = r.progress
+            return seen.insert(it.id).inserted ? it : nil  // a show asked for twice (two seasons) shows once
+        }
+    }
+
+    private var rows: [(String, [Item])] {
+        let ready = items { $0.status == "approved" && ["available", "partial"].contains($0.mediaStatus ?? "") }
+        let coming = items { $0.status == "approved" && !["available", "partial"].contains($0.mediaStatus ?? "") }
+        let waiting = items { $0.status == "pending" }
+        let didnt = items { $0.status == "denied" || $0.status == "failed" }
+        return [("Ready to watch", ready), ("On the way", coming), ("Waiting for approval", waiting), ("Didn't go through", didnt)]
+            .filter { !$0.1.isEmpty }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Metrics.spacing) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(theme.uppercase ? "YOURFLIX" : "YourFlix").font(theme.font(Metrics.rowTitleSize * 2)).foregroundStyle(theme.brandColor)
+                    Text(model.me.map { "Everything \($0.name.split(separator: " ").first.map(String.init) ?? $0.name) asked for" } ?? "Everything you asked for")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, Metrics.gutter)
+                if let error {
+                    ErrorView(message: error) { Task { await load() } }
+                } else if !loaded {
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 300)
+                } else if rows.isEmpty {
+                    Text("Nothing requested yet. Find something on a service and choose Request.")
+                        .foregroundStyle(.secondary).padding(.horizontal, Metrics.gutter)
+                } else {
+                    ForEach(rows, id: \.0) { title, list in
+                        ItemRow(title: "\(title)  ·  \(list.count)", theme: theme, items: list)
+                    }
+                }
+            }
+            .padding(.vertical, Metrics.spacing)
+        }
+        .background(theme.backgroundView)
+        .onAppear { model.theme = model.appTheme }
+        .task { await load() }
+        #if os(iOS)
+        .navigationTitle("YourFlix")
+        #endif
+    }
+
+    private func load() async {
+        do {
+            requests = try await (API.shared.get("/requests", ["scope": "mine"]) as Requests).requests
+            error = nil
+        } catch {
+            if !(error is CancellationError) { self.error = error.localizedDescription }
+        }
+        loaded = true
     }
 }
 
