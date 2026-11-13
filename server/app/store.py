@@ -1,5 +1,5 @@
 """SQLite storage + config.json. Everything lives in NF_DATA (/data in the container)."""
-import contextlib, copy, hashlib, json, os, secrets, sqlite3, threading, time
+import contextlib, copy, hashlib, json, os, re, secrets, sqlite3, threading, time
 
 DATA = os.environ.get("NF_DATA", "/data")
 DB_PATH = os.path.join(DATA, "nuniflix.db")
@@ -16,10 +16,14 @@ DEFAULTS = {
     # Discord sign-in: OAuth app + the server people must be in (and the role they need, if set).
     # The bot token is optional; it only lets setup list the server's roles.
     "discord": {"client_id": "", "secret": "", "guild_id": "", "role_id": "", "bot_token": ""},
+    # Fluxer sign-in (a self-hosted chat): url = the Fluxer's address. Its OAuth only says who someone is, so the
+    # bot token (required) is what checks they're in the server and have the role.
+    "fluxer": {"url": "", "client_id": "", "secret": "", "guild_id": "", "role_id": "", "bot_token": ""},
     "tmdb": {"key": "", "region": "US"},
-    # where notifications go: a Discord channel webhook, Discord DMs (needs the bot token), and phone push
-    # `events` = which ones get posted in the channel (personal notes always go to the people involved)
-    "notify": {"webhook": "", "dm": True, "push": True,
+    # where notifications go: channel webhooks (Discord, or anything that takes Discord's format, like Fluxer),
+    # Discord DMs (needs the bot token), and phone push. webhooks: [{"id", "name", "url"}]; "webhook" is the old single one.
+    # `events` = which ones get posted to the channels (personal notes always go to the people involved)
+    "notify": {"webhooks": [], "webhook": "", "dm": True, "push": True,
                "events": {"pending": True, "approved": False, "denied": False, "available": True, "added": False,
                           "issue": True, "resolved": False, "failed": True}},
     # default request limits for everyone who isn't an admin: N requests per D days (0 = no limit)
@@ -29,6 +33,7 @@ DEFAULTS = {
     "jellyfin_login": True,
     "plex_login": True,
     "discord_login": False,
+    "fluxer_login": False,
     "auto_approve": False,  # True = everyone's requests go straight to Radarr/Sonarr
     "auto_next": True,  # request the next season when someone finishes one (they can opt out under Notifications)
     "brand": "Nuni",  # the first half of the app's name: "Nuni" + "Flix". A friend running their own can make it "Max" -> MaxFlix
@@ -40,6 +45,8 @@ DEFAULTS = {
     "match_on": True,  # Movie Match links (swipe the owner's library with someone)
     # Discord only opens accounts that already have a Plex or Jellyfin sign-in (so it's someone with access to the owner's server)
     "discord_needs_link": True,
+    # the same for Fluxer; off by default because the Fluxer role is usually the gate
+    "fluxer_needs_link": False,
     "site_url": "",  # NuniFlix's own address; Discord redirects and links in posts use it (blank = whatever address is in use)
     "setup_done": False,
 }
@@ -194,7 +201,17 @@ def config():
     for k, v in copy.deepcopy(DEFAULTS).items():
         out[k] = {**v, **saved.get(k, {})} if isinstance(v, dict) else saved.get(k, v)
     out["notify"]["events"] = {**DEFAULTS["notify"]["events"], **(saved.get("notify", {}).get("events") or {})}
+    n = out["notify"]
+    if n.get("webhook") and not n["webhooks"]:  # from before there could be several
+        n["webhooks"] = [{"id": "w1", "name": "Discord", "url": n["webhook"]}]
+    n["webhook"] = ""
     return out
+
+
+def hook_host(url):
+    """'discord.com' / 'chat.example.com': enough to tell webhooks apart without showing the secret link."""
+    m = re.match(r"^https?://([^/]+)", url or "")
+    return m.group(1) if m else ""
 
 
 def save_config(cfg):
@@ -216,6 +233,8 @@ def public_config(cfg=None):
             for f in SECRET_FIELDS:
                 if f in v:
                     out[k][f + "_set"] = bool(v[f])
+            if k == "notify":  # webhook links are secrets too: names and hosts only
+                out[k]["webhooks"] = [{"id": h["id"], "name": h.get("name") or "", "host": hook_host(h["url"])} for h in v.get("webhooks", [])]
         else:
             out[k] = v
     return out
@@ -266,7 +285,7 @@ def tidy():
 # A person (users row) can have one Plex, one Jellyfin and one Discord account linked (identities rows).
 # Signing in with any of them opens the same person. Owner = any linked account is the server owner,
 # so a Discord linked to the owner's Plex/Jellyfin opens the owner's account.
-SOURCES = {"plex": "Plex", "jellyfin": "Jellyfin", "discord": "Discord"}
+SOURCES = {"plex": "Plex", "jellyfin": "Jellyfin", "discord": "Discord", "fluxer": "Fluxer"}
 
 
 class LinkError(Exception):

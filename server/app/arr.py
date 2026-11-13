@@ -431,6 +431,75 @@ def add_episodes(tvdb, season, numbers, search=True, is4k=False, profile=None, r
     return sid
 
 
+def unavailable(kind, ext_id, seasons=None, is4k=False, better=True):
+    """An admin pulled a bad copy: drop its files from Radarr/Sonarr (and the disk, if they're still there).
+    better=True: blocklist the release that was grabbed and search again. better=False: stop monitoring, so it
+    reads as not here (and can be requested again). seasons: TV only, None = every season. Returns files removed."""
+    srv = srv_for(kind, is4k)
+    if not has(srv):
+        raise ArrError(f"{NAMES[srv]} isn't connected yet.")
+    if kind == "movie":
+        lib = movie_lib(srv).get(ext_id)
+        if not lib:
+            raise ArrError(f"{NAMES[srv]} doesn't have this movie.")
+        mid = lib["id"]
+        if better:
+            _fail_grabs(srv, call(srv, "GET", "/api/v3/history/movie", params={"movieId": mid, "eventType": 1}))
+        files = call(srv, "GET", "/api/v3/moviefile", params={"movieId": mid})
+        for f in files:
+            call(srv, "DELETE", f"/api/v3/moviefile/{f['id']}")
+        m = call(srv, "GET", f"/api/v3/movie/{mid}")
+        if m["monitored"] != better:
+            m["monitored"] = better
+            call(srv, "PUT", f"/api/v3/movie/{mid}", json=m)
+        if better:
+            call(srv, "POST", "/api/v3/command", json={"name": "MoviesSearch", "movieIds": [mid]})
+        invalidate("movies")
+        return len(files)
+    lib = tv_lib(srv).get(ext_id)
+    if not lib:
+        raise ArrError(f"{NAMES[srv]} doesn't have this show.")
+    sid = lib["id"]
+    files = [f for f in call(srv, "GET", "/api/v3/episodefile", params={"seriesId": sid})
+             if f.get("seasonNumber", 0) > 0 and (seasons is None or f.get("seasonNumber") in seasons)]
+    picked = sorted({f["seasonNumber"] for f in files}) if seasons is None else sorted(set(seasons))
+    if better:
+        for n in picked:
+            _fail_grabs(srv, call(srv, "GET", "/api/v3/history/series", params={"seriesId": sid, "seasonNumber": n, "eventType": 1}))
+    if files:
+        call(srv, "DELETE", "/api/v3/episodefile/bulk", json={"episodeFileIds": [f["id"] for f in files]})
+    s = call(srv, "GET", f"/api/v3/series/{sid}")
+    changed = False
+    for x in s.get("seasons", []):
+        if x["seasonNumber"] in picked and x.get("monitored") != better:
+            x["monitored"] = better
+            changed = True
+    if better and not s.get("monitored"):
+        s["monitored"] = changed = True
+    if changed:
+        call(srv, "PUT", f"/api/v3/series/{sid}", json=s)
+    if better:
+        for n in picked:
+            call(srv, "POST", "/api/v3/command", json={"name": "SeasonSearch", "seriesId": sid, "seasonNumber": n})
+    invalidate("series")
+    return len(files)
+
+
+def _fail_grabs(srv, history):
+    """Mark grabbed releases as failed: Radarr/Sonarr blocklist them, so the search skips that copy."""
+    recs = history.get("records", history) if isinstance(history, dict) else history
+    seen = set()
+    for h in recs or []:
+        key = h.get("downloadId") or h["id"]
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            call(srv, "POST", f"/api/v3/history/failed/{h['id']}")
+        except Exception:
+            pass  # an old grab that can't be marked any more; the search still runs
+
+
 def fulfilled(kind, ext_id, seasons=None, episodes=None, is4k=False):
     """True once everything a request asked for has files (aired episodes only, for whole shows)."""
     srv = srv_for(kind, is4k)

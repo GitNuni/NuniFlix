@@ -113,7 +113,7 @@ def health():
 def auth_options():
     c = store.config()
     return {"jellyfin": bool(c["jellyfin_login"] and c["jellyfin"]["url"]), "plex": bool(c["plex_login"] and c["plex"]["url"]),
-            "discord": accounts.discord_ready(c), "setup": setup_needed(), "name": c.get("brand") or "Nuni"}
+            "discord": accounts.discord_ready(c), "fluxer": accounts.fluxer_ready(c), "setup": setup_needed(), "name": c.get("brand") or "Nuni"}
 
 
 def feature(user, k):
@@ -193,6 +193,11 @@ def login_discord_callback(state: str = "", code: str = "", error: str = "", gui
                "portal under OAuth2 → Redirects. You don't need to open it.")
     else:
         msg = accounts.discord_callback(state[:100], code[:200], error)
+    return _window_page(msg)
+
+
+def _window_page(msg):
+    """What the sign-in window shows when Discord/Fluxer send someone back (it closes itself)."""
     return HTMLResponse(f"""<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(store.app_name())}</title><body style="font:17px -apple-system,system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;
 text-align:center;padding:20px;background:#000;color:#fff"><p>{html.escape(msg)}</p><script>setTimeout(()=>window.close(),1200)</script>""")
@@ -208,6 +213,37 @@ def login_discord_check(body: DiscordCheck, request: Request):
         if not row or not store.q1("select 1 from identities where user_id=? and source in ('plex','jellyfin')", (row["user_id"],)):
             raise HTTPException(403, "Sign in with Plex or Jellyfin first, then link your Discord under You → Account. "
                                      "After that, Discord signs you in.")
+    user = store.login_identity(ident)
+    if user["blocked"]:
+        raise HTTPException(403, "This account is blocked.")
+    return signed_in(request, user, body.device or "Web", ident["id"])
+
+
+@app.post("/api/auth/fluxer/start")
+def login_fluxer_start(request: Request):
+    return accounts.fluxer_start(base_url(request) + "/api/auth/fluxer/callback")
+
+
+@app.get("/api/auth/fluxer/callback", include_in_schema=False)
+def login_fluxer_callback(state: str = "", code: str = "", error: str = ""):
+    if not state:
+        msg = ("This address is where Fluxer sends people back after they sign in. Paste it into your Fluxer app's "
+               "OAuth2 redirects. You don't need to open it.")
+    else:
+        msg = accounts.fluxer_callback(state[:100], code[:200], error)
+    return _window_page(msg)
+
+
+@app.post("/api/auth/fluxer/check")
+def login_fluxer_check(body: DiscordCheck, request: Request):
+    ident = accounts.fluxer_check(body.state)
+    if not ident:
+        return JSONResponse({"pending": True}, status_code=202)
+    if store.config()["fluxer_needs_link"]:
+        row = store.q1("select user_id from identities where id=?", (ident["id"],))
+        if not row or not store.q1("select 1 from identities where user_id=? and source in ('plex','jellyfin')", (row["user_id"],)):
+            raise HTTPException(403, "Sign in with Plex or Jellyfin first, then link your Fluxer under You \u2192 Account. "
+                                     "After that, Fluxer signs you in.")
     user = store.login_identity(ident)
     if user["blocked"]:
         raise HTTPException(403, "This account is blocked.")
@@ -320,6 +356,17 @@ def link_discord_start(request: Request, user=Depends(current_user)):
 @app.post("/api/link/discord/check")
 def link_discord_check(body: DiscordCheck, user=Depends(current_user)):
     ident = accounts.discord_check(body.state)
+    return _linked(user, ident) if ident else JSONResponse({"pending": True}, status_code=202)
+
+
+@app.post("/api/link/fluxer/start")
+def link_fluxer_start(request: Request, user=Depends(current_user)):
+    return accounts.fluxer_start(base_url(request) + "/api/auth/fluxer/callback")
+
+
+@app.post("/api/link/fluxer/check")
+def link_fluxer_check(body: DiscordCheck, user=Depends(current_user)):
+    ident = accounts.fluxer_check(body.state)
     return _linked(user, ident) if ident else JSONResponse({"pending": True}, status_code=202)
 
 
@@ -1287,6 +1334,32 @@ def delete_issue(iid: int, user=Depends(current_user)):
     return {"ok": True}
 
 
+class Unavailable(BaseModel):
+    type: Literal["movie", "tv"]
+    id: int
+    seasons: Optional[list[int]] = Field(None, max_length=100)  # TV: which seasons; None = all of them
+    is4k: bool = False
+    better: bool = True  # True: blocklist this copy and look for another; False: just take it away
+
+
+@app.post("/api/admin/unavailable")
+def mark_unavailable(body: Unavailable, user=Depends(admin_user)):
+    """A bad copy (wrong cut, cam, broken audio): take it out so it no longer shows as ready to watch."""
+    if body.type == "tv" and body.seasons is not None and not body.seasons:
+        raise HTTPException(400, "Pick the seasons to take away.")
+    removed = arr.unavailable(body.type, body.id, body.seasons, body.is4k, body.better)
+    if body.better:  # people who asked for it hear "ready to watch" again once the new copy lands
+        rows = store.q("select id, seasons from requests where type=? and ext_id=? and is4k=? and status='approved' and done_at is not null",
+                       (body.type, body.id, int(body.is4k)))
+        for r in rows:
+            asked = json.loads(r["seasons"]) if r["seasons"] else None
+            if body.seasons is None or asked is None or set(asked) & set(body.seasons):
+                store.run("update requests set done_at=null where id=?", (r["id"],))
+    print(f"unavailable: {user['name']} took {body.type} {body.id}{' 4K' if body.is4k else ''} "
+          f"seasons={body.seasons} better={body.better} ({removed} files)", flush=True)
+    return {"ok": True, "removed": removed}
+
+
 @app.get("/api/admin/options/{srv}")
 def admin_options(srv: Literal["radarr", "sonarr", "radarr4k", "sonarr4k"], user=Depends(admin_user)):
     """Quality profiles + folders, for picking them per request."""
@@ -1314,10 +1387,12 @@ class Settings(BaseModel):
     jellyfin: Optional[dict] = None
     plex: Optional[dict] = None
     discord: Optional[dict] = None
+    fluxer: Optional[dict] = None
     tmdb: Optional[dict] = None
     jellyfin_login: Optional[bool] = None
     plex_login: Optional[bool] = None
     discord_login: Optional[bool] = None
+    fluxer_login: Optional[bool] = None
     auto_approve: Optional[bool] = None
     auto_next: Optional[bool] = None
     site_url: Optional[str] = Field(None, max_length=300)
@@ -1325,6 +1400,7 @@ class Settings(BaseModel):
     swipe_on: Optional[bool] = None
     match_on: Optional[bool] = None
     discord_needs_link: Optional[bool] = None
+    fluxer_needs_link: Optional[bool] = None
     home_off: Optional[list[str]] = Field(None, max_length=20)
     show_requester: Optional[bool] = None
     office_on: Optional[bool] = None
@@ -1335,11 +1411,35 @@ EDITABLE = {"radarr": {"url", "key", "profile", "root", "availability"},
             "sonarr": {"url", "key", "profile", "root", "season_folders"},
             "jellyfin": {"url", "key", "public_url"}, "plex": {"url"}, "tmdb": {"key", "region"},
             "discord": {"client_id", "secret", "guild_id", "role_id", "bot_token"},
+            "fluxer": {"url", "client_id", "secret", "guild_id", "role_id", "bot_token"},
             "radarr4k": {"url", "key", "profile", "root", "availability"},
             "sonarr4k": {"url", "key", "profile", "root", "season_folders"},
-            "notify": {"webhook", "dm", "push", "events"},
+            "notify": {"webhooks", "dm", "push", "events"},
             "quotas": {"movie_limit", "movie_days", "tv_limit", "tv_days"}}
-FLAGS = ("jellyfin_login", "plex_login", "discord_login", "auto_approve", "auto_next", "swipe_on", "match_on", "discord_needs_link", "show_requester", "office_on", "office_names")
+FLAGS = ("jellyfin_login", "plex_login", "discord_login", "fluxer_login", "fluxer_needs_link", "auto_approve", "auto_next", "swipe_on", "match_on", "discord_needs_link", "show_requester", "office_on", "office_names")
+
+
+HOOK_RE = re.compile(r"^https?://[^\s'\"<>]+/webhooks?/[^\s'\"<>]+$")
+
+
+def _webhooks(new, old):
+    """The settings page sends [{id?, name, url?}]: a blank url keeps that webhook's saved link."""
+    if not isinstance(new, list) or len(new) > 10:
+        raise HTTPException(400, "Up to 10 webhooks.")
+    saved, out = {h["id"]: h for h in old}, []
+    for h in new:
+        if not isinstance(h, dict):
+            continue
+        url = str(h.get("url") or "").strip()
+        hid = str(h.get("id") or "")
+        if not url and hid in saved:
+            url = saved[hid]["url"]
+        if not url:
+            continue
+        if not HOOK_RE.match(url):
+            raise HTTPException(400, "A webhook link should look like https://discord.com/api/webhooks/… (or your Fluxer's).")
+        out.append({"id": hid if hid in saved else secrets.token_hex(4), "name": str(h.get("name") or "").strip()[:40] or store.hook_host(url), "url": url})
+    return out
 
 
 def apply_settings(body: Settings):
@@ -1349,6 +1449,8 @@ def apply_settings(body: Settings):
         for f, v in (new or {}).items():
             if f not in fields or (f in store.SECRET_FIELDS and not v):  # blank secret = keep the saved one
                 continue
+            if section == "notify" and f == "webhooks":
+                v = _webhooks(v, c["notify"]["webhooks"])
             if section == "notify" and f == "events":
                 v = {k: bool(x) for k, x in (v or {}).items() if k in store.DEFAULTS["notify"]["events"]}
             if f in ("url", "public_url") and v and not re.match(r"^https?://[^\s'\"<>]+$", str(v).strip()):
@@ -1557,11 +1659,12 @@ def setup_status():
 @app.get("/api/setup/config")
 def setup_config(request: Request, who=Depends(setup_auth)):
     return {"config": store.public_config(), "owners": _owners(),
-            "discord_redirect": base_url(request) + "/api/auth/discord/callback"}
+            "discord_redirect": base_url(request) + "/api/auth/discord/callback",
+            "fluxer_redirect": base_url(request) + "/api/auth/fluxer/callback"}
 
 
 class SetupTest(BaseModel):
-    kind: Literal["radarr", "sonarr", "radarr4k", "sonarr4k", "jellyfin", "plex", "tmdb", "discord", "notify"]
+    kind: Literal["radarr", "sonarr", "radarr4k", "sonarr4k", "jellyfin", "plex", "tmdb", "discord", "fluxer", "notify"]
     url: Optional[str] = Field(None, max_length=300)
     key: Optional[str] = Field(None, max_length=600)
     client_id: Optional[str] = Field(None, max_length=40)
@@ -1569,6 +1672,7 @@ class SetupTest(BaseModel):
     guild_id: Optional[str] = Field(None, max_length=40)
     bot_token: Optional[str] = Field(None, max_length=200)
     webhook: Optional[str] = Field(None, max_length=300)
+    hook_id: Optional[str] = Field(None, max_length=20)  # test a saved webhook without retyping its link
 
 
 _probe = httpx.Client(timeout=8, headers={"Accept": "application/json"})
@@ -1582,17 +1686,17 @@ def setup_test(body: SetupTest, who=Depends(setup_auth)):
     if url and not re.match(r"^https?://", url):
         return {"ok": False, "message": "The address should start with http:// or https://"}
     # a saved key only ever goes to the saved address (never to a new one someone just typed)
-    same = url == (saved.get("url") or "").strip().rstrip("/") and (body.kind != "discord" or not body.client_id or body.client_id == saved.get("client_id"))
+    same = url == (saved.get("url") or "").strip().rstrip("/") and (body.kind not in ("discord", "fluxer") or not body.client_id or body.client_id == saved.get("client_id"))
     pick = lambda f: (getattr(body, f) or "").strip() or (saved.get(f, "") if same or f not in store.SECRET_FIELDS else "")
     if body.kind == "notify":
-        hook = pick("webhook")
-        if not re.match(r"^https://(ptb\.|canary\.)?discord(app)?\.com/api/webhooks/", hook):
-            return {"ok": False, "message": "That doesn't look like a Discord webhook link"}
+        hook = (body.webhook or "").strip() or next((h["url"] for h in saved["webhooks"] if h["id"] == body.hook_id), "")
+        if not HOOK_RE.match(hook):
+            return {"ok": False, "message": "That doesn't look like a webhook link"}
         try:
-            ok = notify.webhook(hook, "test", "NuniFlix is connected", "Requests, ready-to-watch notes and problem reports will show up here.")
+            ok = notify.webhook(hook, "test", f"{store.app_name()} is connected", "Requests, ready-to-watch notes and problem reports will show up here.")
         except httpx.HTTPError:
             ok = False
-        return {"ok": ok, "message": "Sent a test message to the channel" if ok else "Discord didn't accept that webhook"}
+        return {"ok": ok, "message": "Sent a test message to the channel" if ok else "That webhook didn't accept the message"}
     if body.kind in ("radarr", "sonarr", "radarr4k", "sonarr4k"):
         ok, msg = arr.test(body.kind, url, pick("key"))
         opts = arr.safe(lambda: arr.options(body.kind, {"url": url, "key": pick("key")}), None) if ok else None
@@ -1603,6 +1707,9 @@ def setup_test(body: SetupTest, who=Depends(setup_auth)):
     if body.kind == "discord":
         ok, msg, roles = accounts.discord_test(pick("client_id"), pick("secret"), pick("guild_id"), pick("bot_token"))
         return {"ok": ok, "message": msg, "roles": roles}
+    if body.kind == "fluxer":
+        ok, msg, servers, roles = accounts.fluxer_test(url, pick("client_id"), pick("secret"), pick("guild_id"), pick("bot_token"))
+        return {"ok": ok, "message": msg, "servers": servers, "roles": roles}
     try:
         if body.kind == "plex":
             r = _probe.get(url + "/identity")

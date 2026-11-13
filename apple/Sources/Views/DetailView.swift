@@ -281,10 +281,7 @@ struct SeasonPicker: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Button("All seasons") { done(nil) }
-                }
-                Section("Or pick") {
+                Section("Pick the seasons you want") {
                     ForEach(choices, id: \.n) { s in
                         Button {
                             if picked.contains(s.n) { picked.remove(s.n) } else { picked.insert(s.n) }
@@ -300,8 +297,12 @@ struct SeasonPicker: View {
                     }
                 }
                 Section {
-                    Button("Request \(picked.count == 1 ? "1 season" : "\(picked.count) seasons")") { done(picked.sorted()) }
+                    Button(picked.isEmpty ? "Pick at least one season" : "Request \(picked.count == 1 ? "Season \(picked.first!)" : "\(picked.count) seasons")") { done(picked.sorted()) }
                         .disabled(picked.isEmpty)
+                }
+                Section {  // last on purpose: nothing is picked for you, and the whole show is never the first thing focused
+                    Button("Every season (the whole show)") { done(nil) }
+                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle(is4k ? "Request in 4K" : "Request \(item.title ?? "")")

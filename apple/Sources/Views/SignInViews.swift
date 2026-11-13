@@ -58,7 +58,7 @@ struct ServerView: View {
 }
 
 /// Signing in. On the TV: a code to approve on your phone (no typing passwords with a remote).
-/// On the phone: Plex / Discord in the browser, or a Jellyfin username and password.
+/// On the phone: Plex / Discord / Fluxer in the browser, or a Jellyfin username and password.
 struct SignInView: View {
     @EnvironmentObject var model: AppModel
     @State private var options: AuthOptions?
@@ -185,6 +185,10 @@ struct PhoneSignIn: View {
                 Button { start("discord") } label: { Label("Sign in with Discord", systemImage: "bubble.left.and.bubble.right.fill").frame(maxWidth: 320) }
                     .buttonStyle(.borderedProminent).tint(Color(hex: 0x5865F2))
             }
+            if options?.fluxer == true {
+                Button { start("fluxer") } label: { Label("Sign in with Fluxer", systemImage: "bubble.left.fill").frame(maxWidth: 320) }
+                    .buttonStyle(.borderedProminent).tint(Color(hex: 0x4641D9))
+            }
             if let waiting {
                 HStack { ProgressView(); Text("Finish signing in with \(waiting), then come back here.") }
                     .font(.callout).foregroundStyle(.secondary)
@@ -203,7 +207,7 @@ struct PhoneSignIn: View {
                 let (data, _) = try await API.shared.post("/auth/\(kind)/start")
                 let s: StartURL = try API.shared.decode(data)
                 guard let u = URL(string: s.url) else { return }
-                waiting = kind == "plex" ? "Plex" : "Discord"
+                waiting = ["plex": "Plex", "discord": "Discord", "fluxer": "Fluxer"][kind] ?? kind
                 openURL(u)
                 let until = Date().addingTimeInterval(600)
                 while Date() < until && !Task.isCancelled {

@@ -1,4 +1,4 @@
-"""Notifications: a Discord channel webhook, Discord DMs (through the bot), and Web Push to phones.
+"""Notifications: channel webhooks (Discord and Discord-style, like Fluxer), Discord DMs (through the bot), and Web Push to phones.
 
 Everything is fire-and-forget on a small thread pool, so a slow Discord never holds up a request.
 VAPID keys for Web Push are generated on first use and kept in the data folder.
@@ -49,8 +49,12 @@ def _send(event, title, body, users, admins, poster, url, channel, media=None, f
         if admins:
             for u in store.q("select * from users where (owner=1 or admin=1) and blocked=0"):
                 targets.setdefault(u["id"], u)
-        if channel and n["webhook"] and n["events"].get(event):
-            webhook(n["webhook"], event, title, body, poster, **rich)
+        if channel and n["events"].get(event):
+            for h in n["webhooks"]:  # every channel: Discord, Fluxer...
+                try:
+                    webhook(h["url"], event, title, body, poster, **rich)
+                except httpx.HTTPError as e:
+                    print(f"webhook {h.get('name')} failed:", type(e).__name__, flush=True)
         bot = cfg["discord"]["bot_token"]
         for u in targets.values():
             p = store.prefs(u)

@@ -31,6 +31,7 @@ struct AuthOptions: Decodable {
     var jellyfin: Bool
     var plex: Bool
     var discord: Bool
+    var fluxer: Bool?      // older servers don't send it
     var name: String?
 }
 

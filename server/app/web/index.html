@@ -54,6 +54,7 @@ h2 small{font-size:15px;font-weight:400;color:var(--text2)}
   font-size:10.5px;font-weight:500;color:var(--text2);position:relative}
 .tabs button svg{width:26px;height:26px}
 .tabs button.on{color:var(--accent)}
+.hook{margin-bottom:14px}.hook .foot{min-height:0}.hook-btns{display:flex;gap:8px;padding:0 16px}
 .badge{position:absolute;top:3px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;
   background:var(--red);color:#fff;font-size:12px;font-weight:600;line-height:18px}
 
@@ -297,7 +298,7 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
 
 /* linked sign-in accounts */
 .ic-s{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;font-weight:800;flex:none}
-.ic-s.jellyfin{background:linear-gradient(135deg,#aa5cc3,#00a4dc)} .ic-s.plex{background:#e5a00d;color:#1f1f1f} .ic-s.discord{background:#5865f2}
+.ic-s.jellyfin{background:linear-gradient(135deg,#aa5cc3,#00a4dc)} .ic-s.plex{background:#e5a00d;color:#1f1f1f} .ic-s.discord{background:#5865f2} .ic-s.fluxer{background:#4641d9}
 .link-btns{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 6px}
 #linkJf form{display:grid;gap:10px;margin:6px 0 10px}
 
@@ -318,6 +319,7 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
 .pick .ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:19px}
 .pick .ic.jellyfin{background:linear-gradient(135deg,#aa5cc3,#00a4dc)} .pick .ic.plex{background:#e5a00d;color:#1f1f1f}
 .pick .ic.discord{background:#5865f2}
+.pick .ic.fluxer{background:#4641d9}
 .pick small{font-weight:500;color:var(--text2);font-size:11.5px}
 .foot.ok{color:var(--green)} .foot.bad{color:var(--red)}
 .code{font:600 12.5px ui-monospace,Menlo,monospace;background:var(--fill);padding:2px 6px;border-radius:6px;word-break:break-all;user-select:all}
@@ -333,6 +335,7 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
 .summary div+div::before{content:"";position:absolute;top:0;left:14px;right:0;border-top:.5px solid var(--sep)}
 .summary b{font-weight:500;color:var(--text2);text-align:right}
 .btn.discord{background:#5865f2;color:#fff}
+.btn.fluxer{background:#4641d9;color:#fff}
 
 /* settings forms */
 .form{background:var(--card);border-radius:var(--radius);overflow:hidden;margin-bottom:8px}
@@ -364,6 +367,7 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
 .streaming{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 14px;font-size:13px;color:var(--text2)}
 .streaming button img{width:30px;height:30px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.2)}
 .season.all{font-weight:600}
+.pull{margin-top:10px}.pull .seasons{margin-bottom:10px}.pull .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pull .form{margin-bottom:10px}
 .feature{position:relative;display:block;width:100%;aspect-ratio:16/9;max-height:440px;border-radius:16px;overflow:hidden;
   background:#111 center/cover;text-align:left;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.25)}
 .feature::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 35%,rgba(0,0,0,.85))}
@@ -452,7 +456,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 :root[data-theme="retro"] :is(.big-title .dot,.logo span){color:var(--accent)}
 :root[data-theme="retro"] h2{font-weight:800}
 :root[data-theme="retro"] .btn{border-radius:99px;font-weight:800}
-:root[data-theme="retro"] .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.green){background:linear-gradient(180deg,#f2a33a,#e8631c);box-shadow:0 3px 0 #7a2e14}
+:root[data-theme="retro"] .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.fluxer):not(.green){background:linear-gradient(180deg,#f2a33a,#e8631c);box-shadow:0 3px 0 #7a2e14}
 :root[data-theme="retro"] .poster{border-radius:16px;box-shadow:0 0 0 2px #3a2416,0 8px 18px rgba(0,0,0,.5)}
 :root[data-theme="retro"] .pill{border-radius:99px;font-style:italic;font-weight:800;letter-spacing:0}
 :root[data-theme="retro"] .pill.available,:root[data-theme="retro"] .pill.partial{background:#f6c445;color:#1e120b}
@@ -521,7 +525,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 :root[data-theme="horror"] .detail h3{font-size:20px;letter-spacing:.08em;line-height:1.3}
 :root[data-theme="horror"] :is(.tabs button,.seg button,.chips button,.btn,.pill){font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-weight:600}
 :root[data-theme="horror"] .btn{border-radius:2px;font-size:13px;box-shadow:inset 0 0 0 1px rgba(184,150,62,.6)}
-:root[data-theme="horror"] .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.jf):not(.plexplay){background:var(--accent)}
+:root[data-theme="horror"] .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.fluxer):not(.jf):not(.plexplay){background:var(--accent)}
 :root[data-theme="horror"] .btn.gray{background:var(--card);color:var(--text)}
 :root[data-theme="horror"] :is(.list,.form,.seasons,.me,.summary,.issue-form){border-radius:2px;
   box-shadow:inset 0 0 0 1px rgba(184,150,62,.38),inset 0 0 0 4px var(--card),inset 0 0 0 5px rgba(184,150,62,.16)}
@@ -602,7 +606,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 :root[data-theme="repertory"] .field{background:none;border-radius:0;border-bottom:1.5px solid var(--text);padding:0 2px}
 :root[data-theme="repertory"] .searchbox{background:var(--bg)}
 :root[data-theme="repertory"] .btn{border-radius:3px;font-weight:600;letter-spacing:.01em}
-:root[data-theme="repertory"] .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.jf):not(.plexplay):not(.green){background:var(--text);color:var(--bg)}
+:root[data-theme="repertory"] .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.fluxer):not(.jf):not(.plexplay):not(.green){background:var(--text);color:var(--bg)}
 :root[data-theme="repertory"] .btn.gray{background:none;color:var(--text);box-shadow:inset 0 0 0 1px var(--text)}
 :root[data-theme="repertory"] .btn.green{background:var(--green);color:#fff}
 :root[data-theme="repertory"] .btn.small{border-radius:3px}
@@ -652,7 +656,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 :root[data-theme="repertory"] .meta{font:500 10.5px/1.6 var(--mono);text-transform:uppercase;letter-spacing:.06em}
 :root[data-theme="repertory"] .overview{font-size:15.5px;line-height:1.5}
 :root[data-theme="repertory"] .overview::first-letter{float:left;font:400 3.4em/.82 var(--serif);margin:.06em .1em 0 0;color:var(--ink)}
-:root[data-theme="repertory"] .detail .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.jf):not(.plexplay):not(.green){background:var(--ink);color:var(--on-ink);transition:background-color .5s}
+:root[data-theme="repertory"] .detail .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.fluxer):not(.jf):not(.plexplay):not(.green){background:var(--ink);color:var(--on-ink);transition:background-color .5s}
 :root[data-theme="repertory"] .detail h2{font-size:11.5px!important}
 :root[data-theme="repertory"] .detail .btn:is(.jf,.plexplay){background:var(--ink);color:var(--on-ink);transition:background-color .5s}
 :root[data-theme="repertory"] .chip{border-radius:0;background:none;box-shadow:inset 0 0 0 1px var(--text);font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.06em}
@@ -721,7 +725,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 :root[data-theme="premiere"] .badge{background:var(--accent)}
 /* capsules */
 :root[data-theme="premiere"] .btn{border-radius:99px;font-weight:600;letter-spacing:-.01em}
-:root[data-theme="premiere"] .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.jf):not(.plexplay):not(.green){background:var(--text);color:var(--bg)}
+:root[data-theme="premiere"] .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.fluxer):not(.jf):not(.plexplay):not(.green){background:var(--text);color:var(--bg)}
 :root[data-theme="premiere"] .btn.gray{background:var(--fill)}
 :root[data-theme="premiere"] .chips button{border-radius:99px}
 :root[data-theme="premiere"] .chips button.on,:root[data-theme="premiere"] .settabs button.on{background:var(--text);color:var(--bg)}
@@ -749,7 +753,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 :root[data-theme="premiere"] .detail .head .poster{border-radius:12px;box-shadow:0 18px 40px -14px rgba(0,0,0,.6)}
 :root[data-theme="premiere"] .detail h3{font:700 28px/1.1 var(--display);letter-spacing:-.03em;margin-bottom:6px}
 :root[data-theme="premiere"] .overview{font-size:15.5px;line-height:1.5}
-:root[data-theme="premiere"] .detail .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.green){background:var(--ink);color:var(--on-ink);transition:background-color .5s}
+:root[data-theme="premiere"] .detail .btn:not(.gray):not(.red):not(.plex):not(.discord):not(.fluxer):not(.green){background:var(--ink);color:var(--on-ink);transition:background-color .5s}
 :root[data-theme="premiere"] .season.on .check{background:var(--ink,var(--accent));border-color:var(--ink,var(--accent))}
 :root[data-theme="premiere"] .season.on .check::after{border-color:var(--on-ink,#fff)}
 :root[data-theme="premiere"] .epbtn{color:var(--ink,var(--accent))}
@@ -939,6 +943,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
     <div style="display:grid;gap:10px">
       <button id="plexBtn" class="btn plex wide" hidden>Continue with Plex</button>
       <button id="discordBtn" class="btn discord wide" hidden>Continue with Discord</button>
+      <button id="fluxerBtn" class="btn fluxer wide" hidden>Continue with Fluxer</button>
     </div>
     <div id="orLine" class="or" hidden>or use your Jellyfin account</div>
     <form id="jfForm" hidden>
@@ -1030,7 +1035,7 @@ function applyBrand(b) {
   $$(".logo").forEach(el => el.innerHTML = `${esc(BRAND)}<span>Flix</span>`);
   $$('[data-tab="home"] > .big-title').forEach(el => el.innerHTML = `${esc(BRAND)}<span class="dot">Flix</span>`);
 }
-const SRC = {plex: "Plex", jellyfin: "Jellyfin", discord: "Discord"};
+const SRC = {plex: "Plex", jellyfin: "Jellyfin", discord: "Discord", fluxer: "Fluxer"};
 
 async function api(path, opts = {}) {
   const r = await fetch("/api" + path, {
@@ -3195,7 +3200,7 @@ function renderItem(it) {
     return {...s, full, waiting, locked: full || waiting, note};
   });
   const pickable = seasons.filter(s => !s.locked);
-  const brandNew = isTV && it.status === "none" && !pending.length;  // nothing of it here yet: default to the whole show
+  const brandNew = isTV && it.status === "none" && !pending.length;  // nothing of it here yet: picking every season = the whole show
 
   let action;
   if (it.status === "available" && !isTV) action = `<button class="btn wide gray" disabled>${W("inLibrary")}</button>`;
@@ -3215,10 +3220,11 @@ function renderItem(it) {
   const q = ME.quota?.[it.type];
   if (ME.admin) action += `<details class="adm" id="adv"><summary>Quality &amp; folder for this request</summary><div class="form" id="advForm"><div class="spin" style="margin:12px auto"></div></div></details>`;
   const canReport = ["available", "partial"].includes(it.status);
+  const here = x => ["available", "partial"].includes(x), canPull = ME.admin && (here(it.status) || here(it.status4k));
 
   const seasonsHTML = seasons.length ? `<h2 style="font-size:19px">Seasons ${pickable.length > 1 ? `<small><button id="pickAll">Select all</button></small>` : ""}</h2>
     <div class="seasons" id="seasons">${seasons.map(s => `<div class="sgroup"><div class="srow">
-      <button class="season ${s.locked ? "locked" : ""} ${!s.locked && brandNew ? "on" : ""}" data-n="${s.n}">
+      <button class="season ${s.locked ? "locked" : ""}" data-n="${s.n}">
       <span class="check"></span><span class="name">Season ${s.n}</span><span class="muted" style="font-size:14px">${s.note}</span></button>
       <button class="epbtn" data-eps="${s.n}" aria-label="Episodes of season ${s.n}">Episodes</button></div><div class="eps" hidden></div></div>`).join("")}</div>
     ${pickable.length ? `<p class="foot" style="padding:0">Only want a few? Tap <b>Episodes</b> on a season.</p>` : ""}` : "";
@@ -3241,6 +3247,7 @@ function renderItem(it) {
       ${seasonsHTML}
       ${canReport ? `<button class="btn wide gray" id="reportBtn" style="margin-top:14px">Report a problem</button>
         ${it.issues ? `<p class="quota">${it.issues} open problem report${it.issues === 1 ? "" : "s"}</p>` : ""}<div id="reportBox"></div>` : ""}
+      ${canPull ? `<button class="btn wide gray" id="pullBtn" style="margin-top:10px">Mark unavailable</button><div id="pullBox"></div>` : ""}
       <div id="extras"></div>
     </div>`;
   sh.querySelector(".close").onclick = closeSheet;
@@ -3319,6 +3326,34 @@ function renderItem(it) {
       $("#advForm").innerHTML = `<label><span>Quality</span>${sel("profile", o.profiles.map(p => [p.id, p.name]), o.default_profile)}</label>
         <label><span>Folder</span>${sel("root", o.roots.map(r => [r, r]), o.default_root)}</label>`;
     } catch (err) { $("#advForm").innerHTML = `<p class="foot" style="padding:12px 14px">${esc(err.message)}</p>`; }
+  });
+  $("#pullBtn")?.addEventListener("click", () => {  // admins: take a bad copy away
+    const box = $("#pullBox");
+    if (box.innerHTML) { box.innerHTML = ""; return; }
+    const both = here(it.status) && here(it.status4k);
+    const withFiles = isTV ? (it.seasons || []).filter(s => s.have > 0) : [];
+    box.innerHTML = `<div class="pull">
+      ${both ? `<div class="form"><label><span>Which copy</span>${sel("is4k", [["0", "Regular"], ["1", "4K"]], "0")}</label></div>` : ""}
+      ${withFiles.length > 1 ? `<div class="seasons">${withFiles.map(s => `<button class="season" data-pn="${s.n}"><span class="check"></span>
+        <span class="name">Season ${s.n}</span><span class="muted" style="font-size:14px">${s.have} episode${s.have === 1 ? "" : "s"} here</span></button>`).join("")}</div>` : ""}
+      <p class="foot" style="padding:0 0 10px">Removes the ${isTV ? "episode files" : "file"} from ${isTV ? "Sonarr" : "Radarr"} and your server.
+        <b>Find a better copy</b> also blocks this release so it isn't grabbed again, then searches. <b>Just remove it</b> stops looking,
+        so it can be requested again.</p>
+      <div class="two"><button class="btn red" data-pull="1">Find a better copy</button><button class="btn gray" data-pull="0">Just remove it</button></div></div>`;
+    $$("[data-pn]", box).forEach(b => b.onclick = () => b.classList.toggle("on"));
+    $$("[data-pull]", box).forEach(b => b.onclick = async () => {
+      const better = b.dataset.pull === "1", is4k = both ? $("[name=is4k]", box).value === "1" : !here(it.status);
+      const seasons = !isTV ? null : withFiles.length > 1 ? $$("[data-pn].on", box).map(x => +x.dataset.pn) : withFiles.map(s => s.n);
+      if (isTV && withFiles.length > 1 && !seasons.length) return toast("Pick the seasons to take away.");
+      const what = isTV ? (seasons.length === 1 ? `season ${seasons[0]} of ${it.title}` : `${seasons.length} seasons of ${it.title}`) : it.title;
+      if (!confirm(`${better ? "Delete this copy of" : "Delete"} ${what}${is4k ? " (4K)" : ""}${better ? " and look for a better one" : ""}?`)) return;
+      $$("[data-pull]", box).forEach(x => x.disabled = true);
+      try {
+        await api("/admin/unavailable", {body: {type: it.type, id: it.id, seasons, is4k, better}});
+        toast(better ? "Removed. Looking for a better copy." : "Removed. It can be requested again.");
+        openItem(it.type, it.id);
+      } catch (err) { toast(err.message); $$("[data-pull]", box).forEach(x => x.disabled = false); }
+    });
   });
   $("#reportBtn")?.addEventListener("click", () => {
     const box = $("#reportBox");
@@ -3920,7 +3955,7 @@ async function shareWrapped(w) {  // a 1080×1920 story image in the current the
 }
 
 /* ---------- linked sign-in accounts ---------- */
-const ICON = {plex: "▶", jellyfin: "J", discord: "D"};
+const ICON = {plex: "▶", jellyfin: "J", discord: "D", fluxer: "F"};
 async function renderAccounts() {
   const box = $("#acctBody"); if (!box) return;
   const o = await api("/auth/options", {quiet: true}).catch(() => ({}));
@@ -3928,7 +3963,7 @@ async function renderAccounts() {
   box.innerHTML = `<div class="list">${ME.accounts.map(a => `<div class="li"><span class="ic-s ${a.source}">${ICON[a.source]}</span>
       <div class="body"><div class="t">${esc(a.name)}</div><div class="s">${SRC[a.source]}</div></div>
       ${ME.accounts.length > 1 ? `<div class="acts"><button class="btn small gray" data-unlink="${esc(a.id)}">Unlink</button></div>` : ""}</div>`).join("")}</div>
-    <div class="link-btns">${["plex", "discord", "jellyfin"].filter(k => o[k] && !have.has(k)).map(k =>
+    <div class="link-btns">${["plex", "discord", "fluxer", "jellyfin"].filter(k => o[k] && !have.has(k)).map(k =>
       `<button class="btn small ${k === "jellyfin" ? "gray" : k}" data-link="${k}">Link ${SRC[k]}</button>`).join("")}</div>
     <div id="linkJf"></div>
     <p class="foot">Sign in with any of these and you land in this same account, with the same requests and settings.${ME.owner ? " Linked accounts open your admin account too." : ""}</p>`;
@@ -4100,7 +4135,7 @@ async function paneSystem(el) {
         <div class="body"><div class="t">Everyone sees who's watching what</div><div class="s">Off: people see themselves, and everyone else as "Someone watching something". Admins always see everything.</div></div></label></div>
     <p class="foot">Anything turned off here is gone from everyone's Home. People still arrange what's left in their own Home layout.</p>
     <h2>At a glance</h2>${STEPS.done.html().replace(/<h1>[\s\S]*?<\/p>/, "")}
-    <h2>Connections</h2><div class="summary" id="health">${["jellyfin", "plex", "radarr", "sonarr", "radarr4k", "sonarr4k", "tmdb", "discord"]
+    <h2>Connections</h2><div class="summary" id="health">${["jellyfin", "plex", "radarr", "sonarr", "radarr4k", "sonarr4k", "tmdb", "discord", "fluxer"]
       .filter(k => SETUP.cfg[k] && (SETUP.cfg[k].url || SETUP.cfg[k].key_set || SETUP.cfg[k].client_id))
       .map(k => `<div><span>${NAMES[k]}</span><b data-h="${k}">Checking…</b></div>`).join("")}</div>
     <button class="btn wide gray" id="rerunSetup" style="margin-top:18px">Run the full setup again</button>
@@ -4209,11 +4244,11 @@ async function showLogin() {
   const o = await api("/auth/options", {quiet: true}).catch(() => ({plex: true, jellyfin: true}));
   applyBrand(o.name);
   if (o.setup) return showSetup(false);
-  $("#plexBtn").hidden = !o.plex; $("#discordBtn").hidden = !o.discord; $("#jfForm").hidden = !o.jellyfin;
-  $("#orLine").hidden = !((o.plex || o.discord) && o.jellyfin);
+  $("#plexBtn").hidden = !o.plex; $("#discordBtn").hidden = !o.discord; $("#fluxerBtn").hidden = !o.fluxer; $("#jfForm").hidden = !o.jellyfin;
+  $("#orLine").hidden = !((o.plex || o.discord || o.fluxer) && o.jellyfin);
 }
 
-/* Plex and Discord both sign in in a separate window while we poll with a secret state. */
+/* Plex, Discord and Fluxer all sign in in a separate window while we poll with a secret state. */
 async function popupSignIn(prefix) {
   const win = window.open("", "nfauth", "width=600,height=760");  // open now so popup blockers allow it
   try {
@@ -4246,7 +4281,7 @@ $("#jfForm").addEventListener("submit", async e => {
   btn.disabled = false;
 });
 
-for (const [id, prefix, name] of [["#plexBtn", "/auth/plex", "Plex"], ["#discordBtn", "/auth/discord", "Discord"]]) {
+for (const [id, prefix, name] of [["#plexBtn", "/auth/plex", "Plex"], ["#discordBtn", "/auth/discord", "Discord"], ["#fluxerBtn", "/auth/fluxer", "Fluxer"]]) {
   $(id).addEventListener("click", async () => {
     const btn = $(id); $("#loginErr").textContent = "";
     btn.disabled = true; btn.textContent = `Waiting for ${name}…`;
@@ -4260,7 +4295,7 @@ for (const [id, prefix, name] of [["#plexBtn", "/auth/plex", "Plex"], ["#discord
    Fresh installs land here: setup code (from the container log) → sign-in methods → claim the owner account
    → Radarr/Sonarr → TMDB. Admins can run it again from Settings (no code needed then). */
 const SETUP = {code: "", step: 0, admin: false, cfg: null, owners: [], redirect: "", use: null, ok: {}};
-const NAMES = {jellyfin: "Jellyfin", plex: "Plex", discord: "Discord", radarr: "Radarr", sonarr: "Sonarr", tmdb: "TMDB",
+const NAMES = {jellyfin: "Jellyfin", plex: "Plex", discord: "Discord", fluxer: "Fluxer", radarr: "Radarr", sonarr: "Sonarr", tmdb: "TMDB",
                radarr4k: "Radarr 4K", sonarr4k: "Sonarr 4K", notify: "The webhook"};
 const swi = (name, on) => `<span class="switch"><input type="checkbox" name="${name}" ${on ? "checked" : ""}><i></i></span>`;
 const formObj = form => {
@@ -4274,7 +4309,7 @@ async function loadSetupCfg() {
   Object.assign(SETUP, {cfg: d.config, owners: d.owners, redirect: d.discord_redirect});
   const c = d.config;
   SETUP.use ??= {jellyfin: !!(c.jellyfin.url && c.jellyfin_login), plex: !!(c.plex.url && c.plex_login),
-                 discord: !!(c.discord_login && c.discord.client_id)};
+                 discord: !!(c.discord_login && c.discord.client_id), fluxer: !!(c.fluxer_login && c.fluxer.client_id)};
 }
 async function saveSetup(body) { SETUP.cfg = (await api("/setup/save", {body, quiet: true})).config; }
 
@@ -4294,9 +4329,14 @@ async function stest(kind, root) {
         ? `<label class="opt"><span>Grab when</span>${sel("availability", [["announced", "Announced"], ["inCinemas", "In cinemas"], ["released", "Released"]], c.availability)}</label>`
         : `<label class="opt"><span style="width:auto">Season folders</span>${swi("season_folders", c.season_folders)}</label>`));
     }
-    if (r.ok && r.roles) {  // Discord with a bot token: pick the role from a list
+    if (kind === "fluxer" && r.servers?.length) {  // Fluxer: pick the server from the ones the bot is in
+      const cur = $("[name=guild_id]", form).value;
+      $("#fxGuildBox").innerHTML = sel("guild_id", [["", "Pick a server"], ...r.servers.map(x => [x.id, x.name])], cur);
+      $("#fxGuildBox select").onchange = () => { $("#fxRoleBox").innerHTML = `<input name="role_id" value="" placeholder="Pick the server first">`; stest("fluxer", root); };
+    }
+    if ((kind === "discord" || kind === "fluxer") && r.ok && r.roles) {  // a bot token: pick the role from a list
       const cur = $("[name=role_id]", form).value;
-      $("#roleBox").innerHTML = sel("role_id", [["", "Anyone in the server"], ...r.roles.map(x => [x.id, x.name])], cur);
+      $(kind === "fluxer" ? "#fxRoleBox" : "#roleBox").innerHTML = sel("role_id", [["", "Anyone in the server"], ...r.roles.map(x => [x.id, x.name])], cur);
     }
     return r;
   } catch (e) { out.textContent = "✕ " + e.message; out.classList.add("bad"); SETUP.ok[kind] = false; }
@@ -4308,6 +4348,12 @@ function wireTests(root) {
     f.addEventListener("submit", e => e.preventDefault());
   });
 }
+// one channel webhook in the Notifications settings (a saved one keeps its link unless a new one is pasted)
+const hookRow = h => `<div class="hook" data-id="${esc(h.id || "")}"><form class="form" onsubmit="return false">
+    <label><span>Name</span><input name="name" value="${esc(h.name || "")}" placeholder="Discord, Fluxer…" maxlength="40"></label>
+    <label><span>Webhook link</span><input name="url" type="password" autocomplete="off"
+      placeholder="${h.id ? `Saved · ${esc(h.host)}` : "https://…/webhooks/…"}"></label></form>
+    <p class="foot"></p><div class="hook-btns"><button class="btn small gray" data-try>Send a test</button><button class="btn small gray" data-rm>Remove</button></div></div>`;
 const saved = (c, f, empty) => c[f + "_set"] ? "Saved · leave blank to keep" : empty;
 const ex = port => `http://192.168.1.10:${port}`;
 
@@ -4329,11 +4375,11 @@ const STEPS = {
 
   signin: {
     html: () => {
-      const c = SETUP.cfg, u = SETUP.use, d = c.discord;
+      const c = SETUP.cfg, u = SETUP.use, d = c.discord, f = c.fluxer;
       const pick = (k, ic, sub) => `<button class="pick ${u[k] ? "on" : ""}" data-pick="${k}"><span class="ic ${k}">${ic}</span>${NAMES[k]}<small>${sub}</small></button>`;
       return `<h1>Signing in</h1>
-      <p class="lead">Pick how people sign in, any mix you like. Your own Plex or Jellyfin account becomes the admin. Discord is for everyone else.</p>
-      <div class="picks">${pick("jellyfin", "J", "username + password")}${pick("plex", "▶", "plex.tv account")}${pick("discord", "D", "server members")}</div>
+      <p class="lead">Pick how people sign in, any mix you like. Your own Plex or Jellyfin account becomes the admin. Discord and Fluxer are for everyone else.</p>
+      <div class="picks">${pick("jellyfin", "J", "username + password")}${pick("plex", "▶", "plex.tv account")}${pick("discord", "D", "server members")}${pick("fluxer", "F", "server members")}</div>
 
       <div data-svc="jellyfin" ${u.jellyfin ? "" : "hidden"}><h2>Jellyfin</h2>
         <form class="form" data-kind="jellyfin">
@@ -4351,9 +4397,11 @@ const STEPS = {
         <p class="foot" data-out="plex">Your Plex server on your network. Anyone you share your Plex libraries with can sign in.</p>
         <button class="btn small gray" data-test="plex">Check connection</button></div>
 
-      <div data-svc="discord" ${u.discord ? "" : "hidden"}><h2>Discord</h2>
+      <div data-svc="site" ${u.discord || u.fluxer ? "" : "hidden"}><h2>${APP()} address</h2>
         <form class="form" id="siteForm"><label><span>${APP()} address</span><input name="site_url" value="${esc(c.site_url || location.origin)}" autocapitalize="none" autocorrect="off" inputmode="url"></label></form>
-        <p class="foot">The one address Discord sends people back to. Use the address you open ${APP()} at (e.g. ${esc(location.origin)} at home, or your https name if you have one).</p>
+        <p class="foot">The one address Discord and Fluxer send people back to. Use the address you open ${APP()} at (e.g. ${esc(location.origin)} at home, or your https name if you have one).</p></div>
+
+      <div data-svc="discord" ${u.discord ? "" : "hidden"}><h2>Discord</h2>
         <ol class="how">
           <li>Open <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers</a> and make a <b>New Application</b>.</li>
           <li>Open its <b>OAuth2</b> page. Copy the <b>Client ID</b>, press <b>Reset Secret</b> and copy the <b>Client Secret</b>.</li>
@@ -4370,20 +4418,43 @@ const STEPS = {
           <label><span>Bot token</span><input name="bot_token" type="password" placeholder="${saved(d, "bot_token", "optional")}" autocomplete="off"></label>
           <label><span>Needs role</span><span id="roleBox" style="flex:1;display:flex;width:auto"><input name="role_id" value="${esc(d.role_id)}" placeholder="Role ID · blank = anyone" inputmode="numeric" autocomplete="off"></span></label>
         </form>
-        <form class="form" id="dcLink"><label><span style="width:auto">Only for people who also sign in with Plex or Jellyfin</span>${swi("discord_needs_link", c.discord_needs_link !== false)}</label></form>
+        <form class="form" id="dcLink"><label><span style="width:auto">Needs Plex or Jellyfin too</span>${swi("discord_needs_link", c.discord_needs_link !== false)}</label></form>
         <p class="foot" style="margin-top:6px">On: Discord works once someone has signed in with Plex or Jellyfin (so they have access to your server) and linked Discord under You. New people can't start with Discord.</p>
         <p class="foot" data-out="discord">Only people in that Discord server (with that role, if you pick one) can sign in. A Discord account is only ever admin if you link it to your own Plex or Jellyfin account.</p>
         <button class="btn small gray" data-test="discord">Check connection</button>
-        <button class="btn small gray" id="inviteBot" style="margin-left:6px">Invite the bot</button></div>`;
+        <button class="btn small gray" id="inviteBot" style="margin-left:6px">Invite the bot</button></div>
+
+      <div data-svc="fluxer" ${u.fluxer ? "" : "hidden"}><h2>Fluxer</h2>
+        <ol class="how">
+          <li>In Fluxer, open the developer page where you made your bot (NuniBot works) and pick it, or make a new application.</li>
+          <li>Copy its <b>Client ID</b> and <b>Client Secret</b> (reset the secret if it's hidden), and the <b>Bot Token</b>.</li>
+          <li>Under <b>Redirect URIs</b> add this exactly and save:<br><span class="code" id="fxRedirect">${esc((c.site_url || location.origin) + "/api/auth/fluxer/callback")}</span><br>
+            Paste it, don't open it. ${APP()} only asks Fluxer who the person is. The bot checks they're in your server and have the role.</li>
+          <li>The bot has to be in your Fluxer server. Press <b>Check connection</b>, then pick the server and the role.</li>
+        </ol>
+        <form class="form" data-kind="fluxer">
+          <label><span>Fluxer address</span><input name="url" value="${esc(f.url)}" placeholder="https://chat.example.com" autocapitalize="none" autocorrect="off" inputmode="url"></label>
+          <label><span>Client ID</span><input name="client_id" value="${esc(f.client_id)}" inputmode="numeric" autocomplete="off"></label>
+          <label><span>Client secret</span><input name="secret" type="password" placeholder="${saved(f, "secret", "Paste secret")}" autocomplete="off"></label>
+          <label><span>Bot token</span><input name="bot_token" type="password" placeholder="${saved(f, "bot_token", "Paste token")}" autocomplete="off"></label>
+          <label><span>Server</span><span id="fxGuildBox" style="flex:1;display:flex;width:auto"><input name="guild_id" value="${esc(f.guild_id)}" placeholder="Check connection to pick" inputmode="numeric" autocomplete="off"></span></label>
+          <label><span>Needs role</span><span id="fxRoleBox" style="flex:1;display:flex;width:auto"><input name="role_id" value="${esc(f.role_id)}" placeholder="Role ID · blank = anyone" inputmode="numeric" autocomplete="off"></span></label>
+        </form>
+        <form class="form" id="fxLink"><label><span style="width:auto">Needs Plex or Jellyfin too</span>${swi("fluxer_needs_link", !!c.fluxer_needs_link)}</label></form>
+        <p class="foot" style="margin-top:6px">Off: anyone in the server with the role can make an account with Fluxer. On: Fluxer only works once someone has linked it to a Plex or Jellyfin sign-in under You.</p>
+        <p class="foot" data-out="fluxer">Only people in that Fluxer server (with that role, if you pick one) can sign in, checked every time they sign in. A Fluxer account is only ever admin if you link it to your own Plex or Jellyfin account.</p>
+        <button class="btn small gray" data-test="fluxer">Check connection</button></div>`;
     },
     init: r => {
       wireTests(r);
       $$("[data-pick]", r).forEach(b => b.onclick = () => {
         const k = b.dataset.pick; SETUP.use[k] = !SETUP.use[k];
         b.classList.toggle("on", SETUP.use[k]); $(`[data-svc=${k}]`, r).hidden = !SETUP.use[k];
+        $("[data-svc=site]", r).hidden = !(SETUP.use.discord || SETUP.use.fluxer);
       });
-      for (const k of ["jellyfin", "plex", "discord"]) if (SETUP.use[k]) stest(k, r);  // show what's already working
-      $("#siteForm [name=site_url]", r).oninput = e => { $("#redirectUrl").textContent = e.target.value.trim().replace(/\/+$/, "") + "/api/auth/discord/callback"; };
+      for (const k of ["jellyfin", "plex", "discord", "fluxer"]) if (SETUP.use[k]) stest(k, r);  // show what's already working
+      $("#siteForm [name=site_url]", r).oninput = e => { const b = e.target.value.trim().replace(/\/+$/, "");
+        $("#redirectUrl").textContent = b + "/api/auth/discord/callback"; $("#fxRedirect").textContent = b + "/api/auth/fluxer/callback"; };
       $("#inviteBot", r).onclick = () => {  // bot scope only, no permissions, straight into this server; no redirect involved
         const f = $("form[data-kind=discord]", r), id = $("[name=client_id]", f).value.trim(), g = $("[name=guild_id]", f).value.trim();
         if (!id || !g) return toast("Fill in the Client ID and Server ID first.");
@@ -4393,12 +4464,14 @@ const STEPS = {
     next: async r => {
       const u = SETUP.use;
       if (!u.jellyfin && !u.plex) throw new Error("Pick Jellyfin or Plex (or both). That's how you'll sign in as the admin.");
-      for (const k of ["jellyfin", "plex", "discord"]) {
+      for (const k of ["jellyfin", "plex", "discord", "fluxer"]) {
         if (u[k] && !SETUP.ok[k] && !(await stest(k, r))?.ok) throw new Error(`${NAMES[k]} isn't connecting yet. Check its settings.`);
       }
-      const body = {jellyfin_login: u.jellyfin, plex_login: u.plex, discord_login: u.discord, discord_needs_link: $("[name=discord_needs_link]", r).checked};
-      if (u.discord) body.site_url = $("#siteForm [name=site_url]", r).value.trim();
-      for (const k of ["jellyfin", "plex", "discord"]) if (u[k]) body[k] = formObj($(`form[data-kind=${k}]`, r));
+      if (u.fluxer && !$("form[data-kind=fluxer] [name=guild_id]", r).value) throw new Error("Pick the Fluxer server people have to be in.");
+      const body = {jellyfin_login: u.jellyfin, plex_login: u.plex, discord_login: u.discord, discord_needs_link: $("[name=discord_needs_link]", r).checked,
+                    fluxer_login: u.fluxer, fluxer_needs_link: $("[name=fluxer_needs_link]", r).checked};
+      if (u.discord || u.fluxer) body.site_url = $("#siteForm [name=site_url]", r).value.trim();
+      for (const k of ["jellyfin", "plex", "discord", "fluxer"]) if (u[k]) body[k] = formObj($(`form[data-kind=${k}]`, r));
       await saveSetup(body);
     },
   },
@@ -4524,13 +4597,15 @@ const STEPS = {
       const c = SETUP.cfg, n = c.notify;
       return `<h1>Notifications</h1>
       <p class="lead">Tell people when their requests are approved and ready to watch, and tell you when someone asks for something or reports a problem.</p>
-      <h2>Discord channel</h2>
-      <form class="form" data-kind="notify"><label><span>Webhook link</span><input name="webhook" type="password" placeholder="${saved(n, "webhook", "optional")}" autocomplete="off"></label>
-        <label><span>${APP()} address</span><input name="site_url" value="${esc(c.site_url || n.link || "")}" placeholder="${esc(location.origin)}" autocapitalize="none" autocorrect="off" inputmode="url"></label></form>
-      <p class="foot" data-out="notify">In Discord: channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL. Posts include the poster, backdrop, synopsis,
-        who asked and who approved, seasons, 4K, year, genres and rating. Add ${APP()}'s address and each post's title links straight to it.</p>
-      <button class="btn small gray" data-test="notify">Send a test message</button>
-      <h2>Post to the channel</h2>
+      <h2>Channels</h2>
+      <div id="hooks">${(n.webhooks.length ? n.webhooks : [{}]).map(hookRow).join("")}</div>
+      <button class="btn small gray" id="addHook">+ Add another channel</button>
+      <p class="foot">A webhook link per channel: Discord (channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL),
+        Fluxer (channel settings → Webhooks), or anything else that takes Discord-style webhooks. Every channel gets the same posts: the poster, backdrop,
+        synopsis, who asked and who approved, seasons, 4K, year, genres and rating.</p>
+      <form class="form" data-kind="site"><label><span>${APP()} address</span><input name="site_url" value="${esc(c.site_url || n.link || "")}" placeholder="${esc(location.origin)}" autocapitalize="none" autocorrect="off" inputmode="url"></label></form>
+      <p class="foot">With ${APP()}'s address, each post's title links straight to it.</p>
+      <h2>Post to the channels</h2>
       <form class="form" id="eventFlags">${[["pending", "New requests"], ["approved", "Approved requests"], ["denied", "Declined requests"],
         ["available", "Requests ready to watch"], ["added", "Everything new in the library"], ["issue", "Problem reports"],
         ["resolved", "Problems fixed"], ["failed", "Requests that couldn't be sent"]].map(([k, l]) =>
@@ -4545,19 +4620,42 @@ const STEPS = {
         DMs go to anyone with a Discord account linked${c.discord.bot_token_set ? "" : " (this needs the bot token from the sign-in step, which isn't set)"}.
         Phone notifications are turned on by each person under You. On iPhone, ${APP()} has to be added to the Home Screen and opened from a secure (https) address.</p>`;
     },
-    init: r => wireTests(r),
+    init: r => {
+      wireTests(r);
+      $("#addHook", r).onclick = () => { if ($$(".hook", r).length < 10) $("#hooks", r).insertAdjacentHTML("beforeend", hookRow({})); };
+      $("#hooks", r).addEventListener("click", async e => {
+        const row = e.target.closest(".hook"); if (!row) return;
+        if (e.target.closest("[data-rm]")) { row.remove(); return; }
+        if (!e.target.closest("[data-try]")) return;
+        const out = $(".foot", row), url = $("[name=url]", row).value.trim();
+        if (!url && !row.dataset.id) { out.textContent = "Paste the webhook link first."; return; }
+        out.className = "foot"; out.textContent = "Sending…";
+        try {
+          const x = await api("/setup/test", {body: {kind: "notify", webhook: url, hook_id: url ? null : row.dataset.id}, quiet: true});
+          out.textContent = (x.ok ? "✓ " : "✕ ") + x.message; out.classList.add(x.ok ? "ok" : "bad"); row.dataset.ok = x.ok ? url || "saved" : "";
+        } catch (err) { out.textContent = "✕ " + err.message; out.classList.add("bad"); }
+      });
+    },
     next: async r => {
-      const f = $("form[data-kind=notify]", r), hook = $("[name=webhook]", f).value.trim();
-      if (hook && !SETUP.ok.notify && !(await stest("notify", r))?.ok) throw new Error("That webhook didn't work. Fix it or leave it blank.");
+      const hooks = [];
+      for (const row of $$(".hook", r)) {
+        const url = $("[name=url]", row).value.trim(), name = $("[name=name]", row).value.trim();
+        if (!url && !row.dataset.id) continue;  // an empty new row
+        if (url && row.dataset.ok !== url) {  // a new link: make sure it works before saving it
+          const x = await api("/setup/test", {body: {kind: "notify", webhook: url}, quiet: true});
+          if (!x.ok) throw new Error(`The ${name || "new"} webhook didn't work: ${x.message}`);
+        }
+        hooks.push({id: row.dataset.id || null, name, url});
+      }
       const events = {};
       $$("#eventFlags input", r).forEach(i => events[i.name] = i.checked);
-      await saveSetup({site_url: $("[name=site_url]", f).value.trim(), notify: {webhook: hook, link: "", dm: $("[name=dm]", r).checked, push: $("[name=push]", r).checked, events}});
+      await saveSetup({site_url: $("[name=site_url]", r).value.trim(), notify: {webhooks: hooks, dm: $("[name=dm]", r).checked, push: $("[name=push]", r).checked, events}});
     },
   },
 
   done: {
     html: () => {
-      const c = SETUP.cfg, on = [c.jellyfin_login && c.jellyfin.url && "Jellyfin", c.plex_login && c.plex.url && "Plex", c.discord_login && c.discord.client_id && "Discord"].filter(Boolean);
+      const c = SETUP.cfg, on = [c.jellyfin_login && c.jellyfin.url && "Jellyfin", c.plex_login && c.plex.url && "Plex", c.discord_login && c.discord.client_id && "Discord", c.fluxer_login && c.fluxer.client_id && "Fluxer"].filter(Boolean);
       const row = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
       return `<h1>You're all set</h1>
       <p class="lead">Here's what ${APP()} will use. Everything can be changed later in You → Settings.</p>
@@ -4570,7 +4668,7 @@ const STEPS = {
         ${row("Streaming catalogs", c.tmdb.key_set ? "On ✓" : "Off")}
         ${row("New requests", c.auto_approve ? "Approved automatically" : "Wait for you")}
         ${row("Limits", [c.quotas.movie_limit && `${c.quotas.movie_limit} movies / ${c.quotas.movie_days}d`, c.quotas.tv_limit && `${c.quotas.tv_limit} TV / ${c.quotas.tv_days}d`].filter(Boolean).join(" · ") || "None")}
-        ${row("Notifications", [c.notify.webhook_set && "Discord channel", c.notify.dm && c.discord.bot_token_set && "DMs", c.notify.push && "Phones"].filter(Boolean).join(" · ") || "Off")}
+        ${row("Notifications", [c.notify.webhooks.length && (c.notify.webhooks.length === 1 ? "1 channel" : c.notify.webhooks.length + " channels"), c.notify.dm && c.discord.bot_token_set && "DMs", c.notify.push && "Phones"].filter(Boolean).join(" · ") || "Off")}
       </div>`;
     },
     next: async () => {},

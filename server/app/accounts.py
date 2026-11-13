@@ -1,6 +1,6 @@
 """Sign in with Jellyfin (username/password checked by Jellyfin) or Plex (plex.tv PIN, polled).
 
-Discord sign-in is OAuth: people must be in the configured Discord server and (if set) have its role.
+Discord and Fluxer sign-in are OAuth: people must be in the configured Discord/Fluxer server and (if set) have its role.
 
 No passwords are stored here. Who is an admin ("owner"):
   - the Plex account that owns the Plex server
@@ -144,10 +144,54 @@ def _plex_server_id():
         raise LoginError("Couldn't reach your Plex server.")
 
 
-# ---------- Discord ----------
-# Works like Plex: the app opens Discord in a window and polls with a secret `state`.
+# ---------- Discord and Fluxer ----------
+# Both work like Plex: the app opens Discord/Fluxer in a window and polls with a secret `state`.
 # The callback finishes the sign-in and parks the result here until the app picks it up.
-_discord, _discord_lock = {}, threading.Lock()  # state: {"t", "redirect", "user"?, "error"?}
+_oauth, _oauth_lock = {}, threading.Lock()  # state: {"t", "kind", "redirect", "ident"?, "error"?}
+OAUTH_NAMES = {"discord": "Discord", "fluxer": "Fluxer"}
+
+
+def _new_state(kind, redirect_uri):
+    state = secrets.token_urlsafe(24)
+    with _oauth_lock:
+        now = time.time()
+        for k in [k for k, v in _oauth.items() if now - v["t"] > 900]:
+            del _oauth[k]
+        if len(_oauth) >= MAX_PENDING:
+            raise LoginError("Too many sign-ins in progress. Try again in a few minutes.")
+        _oauth[state] = {"t": now, "kind": kind, "redirect": redirect_uri}
+    return state
+
+
+def oauth_callback(kind, state, code, error=None):
+    """Runs in the Discord/Fluxer window. Returns a message to show there."""
+    with _oauth_lock:
+        entry = _oauth.get(state)
+    if not entry or entry["kind"] != kind or "ident" in entry or "error" in entry:
+        return f"That sign-in link expired. Go back to {store.app_name()} and try again."
+    try:
+        if error or not code:
+            raise LoginError(f"{OAUTH_NAMES[kind]} sign-in was cancelled.")
+        entry["ident"] = (_discord_finish if kind == "discord" else _fluxer_finish)(code, entry["redirect"])
+        return f"You're signed in. You can close this window and go back to {store.app_name()}."
+    except LoginError as e:
+        entry["error"] = str(e)
+        return str(e)
+
+
+def oauth_check(kind, state):
+    """None while the person is still on Discord/Fluxer; their identity once they're through."""
+    with _oauth_lock:
+        entry = _oauth.get(state)
+        if entry and entry["kind"] != kind:
+            entry = None
+        if entry and ("ident" in entry or "error" in entry):
+            del _oauth[state]
+    if not entry:
+        raise LoginError(f"That {OAUTH_NAMES[kind]} sign-in expired. Start again.")
+    if "error" in entry:
+        raise LoginError(entry["error"])
+    return entry.get("ident")
 
 
 def discord_ready(cfg=None):
@@ -160,33 +204,18 @@ def discord_start(redirect_uri):
     cfg = store.config()
     if not discord_ready(cfg):
         raise LoginError("Discord sign-in is turned off.")
-    state = secrets.token_urlsafe(24)
-    with _discord_lock:
-        now = time.time()
-        for k in [k for k, v in _discord.items() if now - v["t"] > 900]:
-            del _discord[k]
-        if len(_discord) >= MAX_PENDING:
-            raise LoginError("Too many sign-ins in progress. Try again in a few minutes.")
-        _discord[state] = {"t": now, "redirect": redirect_uri}
+    state = _new_state("discord", redirect_uri)
     params = {"client_id": cfg["discord"]["client_id"], "response_type": "code", "redirect_uri": redirect_uri,
               "scope": "identify guilds.members.read", "state": state, "prompt": "none"}
     return {"state": state, "url": "https://discord.com/oauth2/authorize?" + urllib.parse.urlencode(params)}
 
 
 def discord_callback(state, code, error=None):
-    """Runs in the Discord window. Returns a message to show there."""
-    with _discord_lock:
-        entry = _discord.get(state)
-    if not entry or "ident" in entry or "error" in entry:
-        return f"That sign-in link expired. Go back to {store.app_name()} and try again."
-    try:
-        if error or not code:
-            raise LoginError("Discord sign-in was cancelled.")
-        entry["ident"] = _discord_finish(code, entry["redirect"])
-        return f"You're signed in. You can close this window and go back to {store.app_name()}."
-    except LoginError as e:
-        entry["error"] = str(e)
-        return str(e)
+    return oauth_callback("discord", state, code, error)
+
+
+def discord_check(state):
+    return oauth_check("discord", state)
 
 
 def _discord_finish(code, redirect_uri):
@@ -216,19 +245,6 @@ def _discord_finish(code, redirect_uri):
     return {"id": "dc:" + me["id"], "name": me.get("global_name") or me.get("username") or "discord user", "source": "discord", "owner": False}
 
 
-def discord_check(state):
-    """None while the person is still on Discord; their identity once they're through."""
-    with _discord_lock:
-        entry = _discord.get(state)
-        if entry and ("ident" in entry or "error" in entry):
-            del _discord[state]
-    if not entry:
-        raise LoginError("That Discord sign-in expired. Start again.")
-    if "error" in entry:
-        raise LoginError(entry["error"])
-    return entry.get("ident")
-
-
 def discord_test(client_id, secret, guild_id, bot_token):
     """(ok, message, roles or None). Roles come back only when a bot token is given."""
     try:
@@ -248,6 +264,110 @@ def discord_test(client_id, secret, guild_id, bot_token):
     roles = [{"id": x["id"], "name": x["name"]} for x in sorted(roles, key=lambda x: -x.get("position", 0))
              if x.get("name") != "@everyone" and not x.get("managed")]
     return True, f"Connected to {g.json().get('name', 'your server')}", roles
+
+
+# ---------- Fluxer ----------
+# Fluxer's OAuth only hands out "identify" (who you are). Being in the server and having the role is checked with
+# the bot's token (e.g. NuniBot), since a person's own Fluxer token isn't allowed to read server members.
+def _fx_api(cfg_fx):
+    return cfg_fx["url"].rstrip("/") + "/api/v1"
+
+
+def fluxer_ready(cfg=None):
+    cfg = cfg or store.config()
+    f = cfg["fluxer"]
+    return bool(cfg["fluxer_login"] and f["url"] and f["client_id"] and f["secret"] and f["guild_id"] and f["bot_token"])
+
+
+def fluxer_start(redirect_uri):
+    cfg = store.config()
+    if not fluxer_ready(cfg):
+        raise LoginError("Fluxer sign-in is turned off.")
+    state = _new_state("fluxer", redirect_uri)
+    params = {"client_id": cfg["fluxer"]["client_id"], "response_type": "code", "redirect_uri": redirect_uri,
+              "scope": "identify", "state": state}
+    return {"state": state, "url": cfg["fluxer"]["url"].rstrip("/") + "/oauth2/authorize?" + urllib.parse.urlencode(params)}
+
+
+def _fluxer_finish(code, redirect_uri):
+    f = store.config()["fluxer"]
+    api = _fx_api(f)
+    try:
+        r = _http.post(f"{api}/oauth2/token", auth=(f["client_id"], f["secret"]),
+                       data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri})
+        if r.status_code != 200:
+            raise LoginError("Fluxer didn't accept that sign-in.")
+        token = r.json()["access_token"]
+        me = _http.get(f"{api}/oauth2/userinfo", headers={"Authorization": "Bearer " + token})
+        try:  # we only needed it for that one lookup
+            _http.post(f"{api}/oauth2/token/revoke", auth=(f["client_id"], f["secret"]), data={"token": token})
+        except httpx.HTTPError:
+            pass
+        if me.status_code != 200:
+            raise LoginError("Fluxer didn't accept that sign-in.")
+        me = me.json()
+        member = _http.get(f"{api}/guilds/{f['guild_id']}/members/{me['id']}", headers={"Authorization": "Bot " + f["bot_token"]})
+    except httpx.HTTPError:
+        raise LoginError("Fluxer didn't respond. Try again in a moment.")
+    except (ValueError, KeyError):
+        raise LoginError("Fluxer sent back something unexpected. Try again.")
+    if member.status_code in (401, 403):
+        raise LoginError(f"{store.app_name()} can't check the Fluxer server right now (the bot isn't allowed in). Tell the owner.")
+    if member.status_code != 200:
+        raise LoginError("You need to be in the Fluxer server to use this.")
+    if f["role_id"] and f["role_id"] not in member.json().get("roles", []):
+        raise LoginError(f"Your Fluxer account doesn't have the role needed for {store.app_name()}.")
+    return {"id": "fx:" + str(me["id"]), "name": me.get("global_name") or me.get("username") or "fluxer user",
+            "source": "fluxer", "owner": False}
+
+
+def fluxer_callback(state, code, error=None):
+    return oauth_callback("fluxer", state, code, error)
+
+
+def fluxer_check(state):
+    return oauth_check("fluxer", state)
+
+
+def fluxer_test(url, client_id, secret, guild_id, bot_token):
+    """(ok, message, servers, roles). Servers = the ones the bot is in; roles = that server's, once one is picked."""
+    if not url:
+        return False, "Fill in your Fluxer address", None, None
+    if not bot_token:
+        return False, "The bot token is needed: it's how the server and role get checked", None, None
+    api = url.rstrip("/") + "/api/v1"
+    h = {"Authorization": "Bot " + bot_token}
+    try:
+        bot = _http.get(f"{api}/users/@me", headers=h)
+        if bot.status_code in (401, 403):
+            return False, "That bot token is wrong", None, None
+        if bot.status_code != 200:
+            return False, "No Fluxer answered at that address", None, None
+        bot_name = bot.json().get("username") or "The bot"
+        if client_id and secret:  # a wrong ID or secret fails before the made-up token is even looked at
+            r = _http.post(f"{api}/oauth2/introspect", auth=(client_id, secret), data={"token": "nuniflix-check"})
+            if r.status_code != 200:
+                return False, "Client ID or secret is wrong", None, None
+        elif not client_id:
+            return False, "Fill in the app's client ID", None, None
+        gl = _http.get(f"{api}/users/@me/guilds", headers=h)
+        servers = [{"id": str(g["id"]), "name": g.get("name") or str(g["id"])} for g in gl.json()] if gl.status_code == 200 else None
+        if not guild_id:
+            if servers == []:
+                return False, f"{bot_name} isn't in any Fluxer server yet", servers, None
+            return True, f"{bot_name} is connected. Pick the server.", servers, None
+        rl = _http.get(f"{api}/guilds/{guild_id}/roles", headers=h)
+        if rl.status_code != 200:
+            return False, f"{bot_name} can't see that server. Add it there and check the server.", servers, None
+        roles = rl.json()
+    except httpx.HTTPError:
+        return False, "Fluxer isn't reachable", None, None
+    except (ValueError, KeyError, TypeError):
+        return False, "That doesn't look like a Fluxer server", None, None
+    roles = [{"id": str(x["id"]), "name": x["name"]} for x in sorted(roles, key=lambda x: -x.get("position", 0))
+             if x.get("name") != "@everyone" and str(x["id"]) != str(guild_id) and not x.get("managed")]
+    name = next((g["name"] for g in servers or [] if g["id"] == str(guild_id)), "your server")
+    return True, f"{bot_name} is connected to {name}", servers, roles
 
 
 # ---------- brute-force guard for the password form ----------
