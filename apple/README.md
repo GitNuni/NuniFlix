@@ -19,7 +19,7 @@ already on your server, Play opens it in Plex.
    open NuniFlix.xcodeproj
    ```
 4. For each target (NuniFlix-TV and NuniFlix-iOS): **Signing & Capabilities → Team** → pick your Apple ID.
-   If Xcode says the bundle ID is taken, change `com.nuniflix.tv` / `com.nuniflix.app` to something of your own.
+   If Xcode says the bundle ID is taken, change `com.nunitech.nuniflix` (both apps share it) to something of your own.
 5. Pick a device at the top (an Apple TV or iPhone simulator, or your real device) and press **Run** (⌘R).
 
 ### On a real Apple TV

@@ -2,12 +2,13 @@
 
 Discord and Fluxer sign-in are OAuth: people must be in the configured Discord/Fluxer server and (if set) have its role.
 
-No passwords are stored here. Who is an admin ("owner"):
+No passwords are stored here. Each person's own Plex/Jellyfin token for the owner's server is kept (store.media_tokens)
+so the in-app player can stream as them: their libraries, their watch history, their resume points. Who is an admin ("owner"):
   - the Plex account that owns the Plex server
   - Jellyfin accounts whose id is listed in config admin_jellyfin_ids
 Being a Jellyfin admin, a Plex friend or anyone on Discord does NOT make someone a NuniFlix admin.
 """
-import os, secrets, threading, time, urllib.parse
+import hashlib, os, secrets, threading, time, urllib.parse
 
 import httpx
 
@@ -27,16 +28,19 @@ def jellyfin_identity(username, password, device="Web"):
     cfg = store.config()
     if not cfg["jellyfin_login"] or not cfg["jellyfin"]["url"]:
         raise LoginError("Jellyfin sign-in is turned off.")
-    user = jellyfin_auth(cfg["jellyfin"]["url"], username, password, device)
+    user = jellyfin_auth(cfg["jellyfin"]["url"], username, password, device, keep=True)
     if not user:
         return None
     return {"id": "jf:" + user["Id"], "name": user.get("Name", username), "source": "jellyfin",
-            "owner": user["Id"] in cfg["admin_jellyfin_ids"]}
+            "owner": user["Id"] in cfg["admin_jellyfin_ids"], "media_token": user.get("_token")}
 
 
-def jellyfin_auth(url, username, password, device="Web"):
-    """Jellyfin's own record for this user if the password is right (and the account is enabled), else None."""
-    auth = f'MediaBrowser Client="{store.app_name()}", Device="{device[:40]}", DeviceId="nuniflix-{secrets.token_hex(6)}", Version="1.0"'
+def jellyfin_auth(url, username, password, device="Web", keep=False):
+    """Jellyfin's own record for this user if the password is right (and the account is enabled), else None.
+    keep=True: leave the Jellyfin session open and put its token in user["_token"] (for playing in the app). It uses one
+    device id per username, so signing in again replaces the old session instead of piling them up in Jellyfin."""
+    dev_id = "nuniflix-" + (hashlib.sha256(username.lower().encode()).hexdigest()[:12] if keep else secrets.token_hex(6))
+    auth = f'MediaBrowser Client="{store.app_name()}", Device="{device[:40]}", DeviceId="{dev_id}", Version="1.0"'
     try:
         r = _http.post(url.rstrip("/") + "/Users/AuthenticateByName",
                        headers={"Authorization": auth}, json={"Username": username, "Pw": password})
@@ -46,7 +50,9 @@ def jellyfin_auth(url, username, password, device="Web"):
         return None
     d = r.json()
     user, token = d.get("User") or {}, d.get("AccessToken")
-    if token:  # don't leave a device session behind in Jellyfin
+    if token and keep:
+        user["_token"] = token
+    elif token:  # don't leave a device session behind in Jellyfin
         try:
             _http.post(url.rstrip("/") + "/Sessions/Logout", headers={"Authorization": f'{auth}, Token="{token}"'})
         except httpx.HTTPError:
@@ -130,7 +136,7 @@ def plex_check(state):
             cfg["plex"]["token"] = mine["accessToken"]
             store.save_config(cfg)
     return {"id": f"plex:{me.get('id')}", "name": me.get("username") or me.get("title") or "plex user",
-            "source": "plex", "owner": bool(mine.get("owned"))}
+            "source": "plex", "owner": bool(mine.get("owned")), "media_token": mine.get("accessToken")}
 
 
 def _plex_server_id():

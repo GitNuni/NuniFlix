@@ -2,7 +2,7 @@
 # One codebase, two apps: Apple TV and iPhone/iPad.
 name: NuniFlix
 options:
-  bundleIdPrefix: com.nuniflix
+  bundleIdPrefix: com.nunitech
   deploymentTarget:
     iOS: "17.0"
     tvOS: "17.0"
@@ -10,14 +10,15 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: ""   # pick your team in Xcode → Signing & Capabilities
+    CURRENT_PROJECT_VERSION: "2"
+    DEVELOPMENT_TEAM: 4BFLU9C935   # nunitech Apple Developer team
     CODE_SIGN_STYLE: Automatic
 targets:
   NuniFlix-TV:
     type: application
+    scheme: {}   # shared scheme, so it's always there (Xcode's auto-made ones come and go)
     platform: tvOS
-    sources: [Sources]
+    sources: [Sources, Resources/TV]
     info:
       path: Info-TV.plist
       properties:
@@ -26,13 +27,16 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true   # home servers are often plain http://192.168.x.x
         LSApplicationQueriesSchemes: [plex]
+        ITSAppUsesNonExemptEncryption: false   # only standard HTTPS; skips the export question on each upload
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.nuniflix.tv
+        PRODUCT_BUNDLE_IDENTIFIER: com.nunitech.nuniflix   # same ID as iOS: one App Store Connect record, universal purchase
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
   NuniFlix-iOS:
     type: application
+    scheme: {}   # shared scheme, so it's always there (Xcode's auto-made ones come and go)
     platform: iOS
-    sources: [Sources]
+    sources: [Sources, Resources/iOS]
     info:
       path: Info-iOS.plist
       properties:
@@ -41,9 +45,12 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         LSApplicationQueriesSchemes: [plex]
+        ITSAppUsesNonExemptEncryption: false
+        UIBackgroundModes: [audio]   # picture-in-picture and audio keep going when you leave the app
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.nuniflix.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.nunitech.nuniflix
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"

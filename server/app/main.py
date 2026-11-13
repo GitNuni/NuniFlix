@@ -7,13 +7,13 @@ from typing import Literal, Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import random
 
-import accounts, arr, history, media, notify, office, store, tmdb
+import accounts, arr, history, media, notify, office, player, store, tmdb
 
 VERSION = "0.4.0"
 COOKIE = "nf_token"
@@ -27,6 +27,11 @@ def _arr_error(_, e):
 
 @app.exception_handler(accounts.LoginError)
 def _login_error(_, e):
+    return JSONResponse({"detail": str(e)}, status_code=400)
+
+
+@app.exception_handler(player.PlayError)
+def _play_error(_, e):
     return JSONResponse({"detail": str(e)}, status_code=400)
 
 
@@ -529,6 +534,46 @@ def watch_links(kind: Literal["movie", "tv"], ext_id: int, user=Depends(current_
     """Links to open this title on Jellyfin / Plex, for whichever of those this person has linked."""
     mine = {i["source"] for i in store.identities(user["id"])} & {"jellyfin", "plex"}
     return media.links(kind, ext_id, mine or {"jellyfin", "plex"})
+
+
+# ---------- watching in the app (player.py) ----------
+@app.get("/api/play/{kind}/{ext_id}")
+def play_options(kind: Literal["movie", "tv"], ext_id: int, user=Depends(current_user)):
+    """What this person can play of a title, from their own Plex/Jellyfin: the movie, or the show's episodes."""
+    return player.options(user, kind, ext_id)
+
+
+class PlayStart(BaseModel):
+    id: str = Field(pattern=r"^[A-Za-z0-9-]{1,64}$")
+    offset: float = Field(0, ge=0, le=86400)
+    platform: Literal["ios", "tvos"] = "ios"
+
+
+@app.post("/api/play/start")
+def play_start(body: PlayStart, user=Depends(current_user)):
+    return player.start(user, body.id, body.offset, body.platform)
+
+
+class PlayProgress(BaseModel):
+    session: str = Field(max_length=100)
+    position: float = Field(ge=0, le=86400)
+    duration: Optional[float] = Field(None, ge=0, le=86400)
+    state: Literal["playing", "paused", "stopped"]
+
+
+@app.post("/api/play/progress")
+def play_progress(body: PlayProgress, user=Depends(current_user)):
+    player.progress(user, body.session, body.position, body.state, body.duration)
+    return {"ok": True}
+
+
+@app.get("/api/stream/{sid}/{path:path}", include_in_schema=False)
+def stream(sid: str, path: str, request: Request):
+    """The video itself, passed through from Plex/Jellyfin. The unguessable stream id is the key (see player.py)."""
+    status, headers, body = player.fetch(sid, path, request.url.query, request.headers.get("range"))
+    if isinstance(body, bytes):
+        return Response(body, status_code=status, headers=headers)
+    return StreamingResponse(body, status_code=status, headers=headers)
 
 
 @app.get("/api/home/foryou")

@@ -11,6 +11,18 @@ struct DetailView: View {
     @State private var busy = false
     @State private var message: String?
     @State private var pickSeasons: Bool? = nil   // non-nil: the season sheet is up (true = 4K)
+    @State private var playOptions: PlayOptions?
+    @State private var showEpisodes = false
+    @State private var resumeChoice: PlayItem?
+    @State private var nowPlaying: NowPlaying?
+    @State private var playError: String?
+
+    struct NowPlaying: Identifiable {
+        let id = UUID()
+        var item: PlayItem
+        var upNext: [PlayItem]
+        var start: Double
+    }
 
     var theme: ServiceTheme { model.theme }
 
@@ -46,6 +58,27 @@ struct DetailView: View {
                 pickSeasons = nil
                 Task { await request(is4k: k, seasons: seasons) }
             }
+        }
+        .sheet(isPresented: $showEpisodes) {
+            EpisodePicker(title: item.title ?? "Episodes", episodes: playOptions?.items ?? []) { e in
+                showEpisodes = false
+                Task { try? await Task.sleep(for: .milliseconds(450)); choose(e) }  // let the sheet go first
+            }
+        }
+        .confirmationDialog(resumeChoice?.title ?? "", isPresented: Binding(get: { resumeChoice != nil }, set: { if !$0 { resumeChoice = nil } }),
+                            titleVisibility: .visible, presenting: resumeChoice) { e in
+            Button("Resume from \(clock(e.resume))") { begin(e, at: e.resume) }
+            Button("Start from the beginning") { begin(e, at: 0) }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Can't play it here", isPresented: Binding(get: { playError != nil }, set: { if !$0 { playError = nil } })) {
+            Button("Open in Plex or Jellyfin") { Task { await openExternally() } }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(playError ?? "")
+        }
+        .fullScreenCover(item: $nowPlaying) { np in
+            PlayerScreen(item: np.item, upNext: np.upNext, start: np.start)
         }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -236,8 +269,32 @@ struct DetailView: View {
         }
     }
 
-    /// Open it in Plex (the app, when it's installed) or Jellyfin. The Apple TV has no browser, so there it has to be an app.
+    /// Play in the app, from the person's own Plex/Jellyfin. A movie starts (or offers to resume); a show opens its episodes.
     private func play() async {
+        guard let id = item.extID else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let o: PlayOptions = try await API.shared.get("/play/\(item.type)/\(id)")
+            playOptions = o
+            if item.isMovie, let m = o.items.first { choose(m) } else { showEpisodes = true }
+        } catch {
+            playError = error.localizedDescription
+        }
+    }
+
+    private func choose(_ e: PlayItem) {
+        if e.canResume { resumeChoice = e } else { begin(e, at: 0) }
+    }
+
+    private func begin(_ e: PlayItem, at start: Double) {
+        let all = playOptions?.items ?? []
+        let upNext = item.isMovie ? [] : Array(all.drop { $0.id != e.id }.dropFirst())
+        nowPlaying = NowPlaying(item: e, upNext: upNext, start: start)
+    }
+
+    /// Open it in Plex (the app, when it's installed) or Jellyfin. The Apple TV has no browser, so there it has to be an app.
+    private func openExternally() async {
         guard let id = item.extID else { return }
         let links: [String: String?] = (try? await API.shared.get("/watch/\(item.type)/\(id)")) ?? [:]
         let plex = links["plex"] ?? nil, jelly = links["jellyfin"] ?? nil

@@ -92,6 +92,8 @@ create table if not exists match_sessions(
 create table if not exists match_votes(
   code text not null references match_sessions(code) on delete cascade, who text not null, tmdb integer not null,
   vote text not null, created real not null, primary key(code, who, tmdb));
+create table if not exists media_tokens(
+  identity text primary key references identities(id) on delete cascade, token text not null, updated real not null);
 create table if not exists push_subs(
   endpoint text primary key, user_id text not null references users(id) on delete cascade,
   p256dh text not null, auth text not null, created real not null);
@@ -313,6 +315,7 @@ def login_identity(ident):
             run("insert into users(id,name,source,owner,admin,blocked,created,last_seen) values(?,?,?,0,0,0,?,?)",
                 (uid, ident["name"], ident["source"], now, now))
             run("insert into identities values(?,?,?,?,?,?,?)", (ident["id"], uid, ident["source"], ident["name"], int(ident["owner"]), now, now))
+        _save_media_token(ident)
         _refresh(uid)
         return q1("select * from users where id=?", (uid,))
 
@@ -366,7 +369,20 @@ def link_identity(uid, ident):
             if q1("select 1 from identities where user_id=? and source=?", (uid, ident["source"])):
                 raise LinkError(f"You already have a {SOURCES[ident['source']]} account linked. Unlink it first.")
             run("insert into identities values(?,?,?,?,?,?,?)", (ident["id"], uid, ident["source"], ident["name"], int(ident["owner"]), now, now))
+        _save_media_token(ident)
         _refresh(uid)
+
+
+def _save_media_token(ident):
+    """This sign-in account's own Plex/Jellyfin token, for streaming in the app as them."""
+    if ident.get("media_token"):
+        run("insert or replace into media_tokens values(?,?,?)", (ident["id"], ident["media_token"], time.time()))
+
+
+def media_account(uid, source):
+    """The person's linked Plex/Jellyfin account and its token (None until they've signed in with it since tokens were kept)."""
+    return q1("select i.id, i.owner, t.token from identities i left join media_tokens t on t.identity=i.id "
+              "where i.user_id=? and i.source=?", (uid, source))
 
 
 def unlink_identity(uid, ident_id):

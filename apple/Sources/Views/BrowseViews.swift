@@ -94,13 +94,18 @@ struct ServiceHomeView: View {
     @State private var page: RowsPage?
     @State private var error: String?
     @State private var loading = false
+    @FocusState private var pickerFocused: Bool
 
     var theme: ServiceTheme { ServiceTheme.of(provider.name) }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: Metrics.spacing) {
-                header
+            // iOS: the Shows / Movies bar stays pinned at the top while you scroll.
+            // tvOS: the Back/Menu button jumps up to it (see onExitCommand below), and it's its own focus section,
+            // so swiping up from the first row always lands on it.
+            LazyVStack(alignment: .leading, spacing: Metrics.spacing, pinnedViews: pinned) {
+              Section {
                 if let error {
                     ErrorView(message: error) { Task { await load() } }
                 } else if let page {
@@ -112,8 +117,19 @@ struct ServiceHomeView: View {
                 } else {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 400)
                 }
+              } header: {
+                header.id("top")
+              }
             }
             .padding(.bottom, Metrics.spacing * 2)
+        }
+        #if os(tvOS)
+        // Back while browsing the rows: go up to Shows / Movies. Back again (already up there): leave, as usual.
+        .onExitCommand(perform: pickerFocused ? nil : {
+            withAnimation { proxy.scrollTo("top", anchor: .top) }
+            pickerFocused = true
+        })
+        #endif
         }
         .background(theme.backgroundView)
         .task(id: kind) { await load() }
@@ -138,6 +154,7 @@ struct ServiceHomeView: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 420)
+            .focused($pickerFocused)
             Spacer()
             NavigationLink(value: Route.search(provider)) { Label("Search", systemImage: "magnifyingglass") }
                 #if os(iOS)
@@ -146,6 +163,20 @@ struct ServiceHomeView: View {
         }
         .padding(.horizontal, Metrics.gutter)
         .padding(.top, Metrics.spacing / 2)
+        #if os(iOS)
+        .padding(.bottom, Metrics.spacing / 2)
+        .background(theme.background[0])  // pinned: rows scroll underneath it
+        #else
+        .focusSection()
+        #endif
+    }
+
+    private var pinned: PinnedScrollableViews {
+        #if os(iOS)
+        return .sectionHeaders
+        #else
+        return []
+        #endif
     }
 
     private var logoSize: CGFloat {
