@@ -12,6 +12,7 @@ struct Me: Decodable {
 
     struct Prefs: Decodable {
         var theme: String?
+        var season: Bool?
     }
 
     struct Perms: Decodable {

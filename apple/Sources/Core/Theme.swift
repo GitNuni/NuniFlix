@@ -114,7 +114,10 @@ struct ServiceTheme {
     }
 
     var backgroundView: some View {
-        LinearGradient(colors: background, startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+        ZStack {
+            LinearGradient(colors: background, startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            SeasonalLayer()  // leaves, snow… behind every screen (Seasonal.swift)
+        }
     }
 }
 

@@ -67,6 +67,7 @@ final class AppModel: ObservableObject {
     func loadMe() async {
         me = try? await API.shared.get("/me")
         if let t = me?.prefs?.theme { themeID = t }
+        if let me { UserDefaults.standard.set(me.prefs?.season ?? true, forKey: "season") }  // seasonal background, on unless turned off
         if let o: AuthOptions = try? await API.shared.get("/auth/options"), let n = o.name, !n.isEmpty {
             brand = n.hasSuffix("Flix") ? n : n + "Flix"
         }

@@ -30,6 +30,8 @@ try { const t = localStorage.getItem("nf.theme"); if (t && t !== "nuniflix") doc
   --text:#fff; --text2:rgba(235,235,245,.6); --sep:rgba(84,84,88,.6); --bar:rgba(22,22,24,.82);
 }}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+#season{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+#app,#login,#setup{position:relative;z-index:1}  /* above the seasonal layer: it only shows between cards */
 html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.35 var(--font);-webkit-font-smoothing:antialiased}
 body{min-height:100dvh;padding-bottom:calc(84px + env(safe-area-inset-bottom))}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
@@ -4351,6 +4353,8 @@ function paneAccount(el) {
     <p class="foot" style="margin-top:8px">Pick what's on your Home and in what order. Saved to your account, so it's the same on every device.</p>
     <h2>Trailers</h2><form class="form" id="fAuto"><label><span style="width:auto">Play trailers automatically</span>${swi("autoplay", ME.prefs.autoplay !== false)}</label></form>
     <p class="foot">Muted, on title pages and the banner at the top of Home. Tap the speaker for sound.</p>
+    <h2>Seasonal effects</h2><form class="form" id="fSeason"><label><span style="width:auto">Falling leaves, snow… and the odd visitor</span>${swi("season", ME.prefs.season !== false)}</label></form>
+    <p class="foot">Quietly behind everything: leaves in the fall, snow at Christmas. Keep an eye on the bottom of the screen around the holidays. Off automatically if your device is set to reduce motion.</p>
     <h2>Theme</h2><div class="themes">${Object.entries(THEMES).map(([k, name]) => `<button class="theme-opt ${theme() === k ? "on" : ""}" data-theme-pick="${k}">
       <div class="sw ${k}">${(B => ({blockbuster: `<span>${B.toUpperCase()}</span>`, nunitech: B.toLowerCase(), retro: B, atomic: `<span>${B}</span>`, horror: B.toUpperCase(), repertory: B, premiere: B})[k] || B[0])(esc(BRAND))}</div>${k === "nuniflix" ? esc(APP()) : name}</button>`).join("")}</div>` +
     (["movie", "tv"].some(k => ME.quota?.[k]) ? `<h2>Your requests</h2><div class="summary">${["movie", "tv"].filter(k => ME.quota[k]).map(k => {
@@ -4358,6 +4362,8 @@ function paneAccount(el) {
     }).join("")}</div>` : "");
   $$("[data-theme-pick]").forEach(b => b.onclick = () => { setTheme(b.dataset.themePick); $$("[data-theme-pick]").forEach(x => x.classList.toggle("on", x === b)); });
   wireHomeLayout();
+  $("#fSeason [name=season]").onchange = e => { window.NFSeason?.set(e.target.checked);
+    api("/me/prefs", {body: {season: e.target.checked}}).then(() => { ME.prefs.season = e.target.checked; }).catch(err => toast(err.message)); };
   $("#fAuto [name=autoplay]").onchange = e => api("/me/prefs", {body: {autoplay: e.target.checked}}).then(() => { ME.prefs.autoplay = e.target.checked; }).catch(err => toast(err.message));
   $("#signOut").onclick = async () => { await api("/auth/logout", {method: "POST"}).catch(() => {}); location.reload(); };
   renderAccounts();
@@ -5052,6 +5058,7 @@ async function start() {
       api("/auth/tv/approve", {body: {code}}).then(() => toast("The TV is signed in.")).catch(e => toast(e.message));
   }
   if (ME.prefs?.theme && ME.prefs.theme !== theme()) setTheme(ME.prefs.theme, false);
+  window.NFSeason?.set(ME.prefs?.season !== false);
   $("#login").hidden = $("#setup").hidden = true; $("#app").hidden = $("#tabs").hidden = false;
   let s = history.state?.tab ? history.state : {tab: "home", depth: 0};  // a reload stays on the same screen
   const link = new URLSearchParams(location.search).get("item")?.match(/^(movie|tv):(\d+)$/);  // from a Discord post or notification
@@ -5061,5 +5068,7 @@ async function start() {
 }
 start();
 </script>
+<script src="/season.js"></script>
+<script>window.NFSeason?.set(true)</script>
 </body>
 </html>

@@ -647,6 +647,7 @@ struct RequestsView: View {
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var seasonTick = false
 
     var body: some View {
         NavigationStack {
@@ -661,6 +662,14 @@ struct SettingsView: View {
                     }
                 } footer: {
                     Text("For NuniFlix's own screens. Browsing a service keeps that service's look. Same theme as on the website.")
+                }
+                Section {
+                    Toggle("Seasonal effects", isOn: Binding(get: { UserDefaults.standard.object(forKey: "season") as? Bool ?? true },
+                                                             set: { v in UserDefaults.standard.set(v, forKey: "season"); seasonTick.toggle()
+                                                                 Task { _ = try? await API.shared.post("/me/prefs", ["season": v]) } }))
+                        .id(seasonTick)
+                } footer: {
+                    Text("Falling leaves, snow… and the odd visitor around the holidays. Same setting as on the website.")
                 }
                 Section {
                     Button("Sign out", role: .destructive) { Task { await model.signOut(); dismiss() } }
