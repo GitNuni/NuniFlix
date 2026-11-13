@@ -16,6 +16,7 @@ struct DetailView: View {
     @State private var resumeChoice: PlayItem?
     @State private var nowPlaying: NowPlaying?
     @State private var playError: String?
+    @State private var links: [String: String?] = [:]   // where it is: "plex" / "jellyfin" -> web link
 
     struct NowPlaying: Identifiable {
         let id = UUID()
@@ -72,7 +73,6 @@ struct DetailView: View {
             Button("Cancel", role: .cancel) {}
         }
         .alert("Can't play it here", isPresented: Binding(get: { playError != nil }, set: { if !$0 { playError = nil } })) {
-            Button("Open in Plex or Jellyfin") { Task { await openExternally() } }
             Button("OK", role: .cancel) {}
         } message: {
             Text(playError ?? "")
@@ -131,8 +131,16 @@ struct DetailView: View {
                 ProgressView()
             } else {
                 if item.status == "available" || item.status == "partial" {
-                    Button { Task { await play() } } label: { Label("Play", systemImage: "play.fill") }
-                        .tint(theme.accent)
+                    if let plex = links["plex"] ?? nil {
+                        Button { openPlex(plex) } label: { Label("Play in Plex", systemImage: "play.fill") }
+                            .tint(theme.accent)
+                    }
+                    if let jelly = links["jellyfin"] ?? nil {
+                        Button { openJellyfin(jelly) } label: { Label("Play in Jellyfin", systemImage: "play.fill") }
+                            .tint(theme.accent)
+                    }
+                    Button { Task { await play() } } label: { Label("Play here (super experimental!)", systemImage: "play.rectangle") }
+                        .disabled(busy)
                 }
                 if canRequest(is4k: false) {
                     Button { startRequest(is4k: false) } label: {
@@ -242,6 +250,9 @@ struct DetailView: View {
             if !(error is CancellationError) { self.error = error.localizedDescription }
         }
         loaded = true
+        if (item.status == "available" || item.status == "partial"), let id = item.extID {
+            links = (try? await API.shared.get("/watch/\(item.type)/\(id)")) ?? [:]
+        }
         if extras == nil, let t = item.tmdb { extras = try? await API.shared.get("/extra/\(item.type)/\(t)") }
     }
 
@@ -293,27 +304,27 @@ struct DetailView: View {
         nowPlaying = NowPlaying(item: e, upNext: upNext, start: start)
     }
 
-    /// Open it in Plex (the app, when it's installed) or Jellyfin. The Apple TV has no browser, so there it has to be an app.
-    private func openExternally() async {
-        guard let id = item.extID else { return }
-        let links: [String: String?] = (try? await API.shared.get("/watch/\(item.type)/\(id)")) ?? [:]
-        let plex = links["plex"] ?? nil, jelly = links["jellyfin"] ?? nil
-        if let plex, let app = Self.plexAppURL(plex) {
-            openURL(app) { ok in
-                if ok { return }
-                #if os(iOS)
-                if let web = URL(string: plex) { openURL(web) }
-                #else
-                message = "Open the Plex app to watch \(item.title ?? "it")."
-                #endif
-            }
-            return
+    /// Open it in the Plex app (or plex.tv on the iPhone, if the app isn't installed).
+    /// Plex Home with several users: Plex asks who's watching first and may lose the title (Plex's doing, not ours).
+    private func openPlex(_ web: String) {
+        guard let app = Self.plexAppURL(web) else { return }
+        openURL(app) { ok in
+            if ok { return }
+            #if os(iOS)
+            if let w = URL(string: web) { openURL(w) }
+            #else
+            message = "Install the Plex app to watch \(item.title ?? "it") there."
+            #endif
         }
+    }
+
+    /// Jellyfin's web app on the iPhone. The Apple TV has no browser: point them at Swiftfin / the Jellyfin app.
+    private func openJellyfin(_ web: String) {
         #if os(iOS)
-        if let jelly, let web = URL(string: jelly) { openURL(web); return }
+        if let w = URL(string: web) { openURL(w) }
+        #else
+        message = "Open Swiftfin or the Jellyfin app to watch \(item.title ?? "it")."
         #endif
-        message = jelly != nil ? "It's on Jellyfin. Open Swiftfin or the Jellyfin app to watch it."
-            : "It's on the server. Open Plex or Jellyfin to watch it."
     }
 
     /// https://app.plex.tv/desktop/#!/server/<machine>/details?key=%2Flibrary%2Fmetadata%2F123 -> plex://preplay/?...

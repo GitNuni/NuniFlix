@@ -40,7 +40,7 @@ DEFAULTS = {
     "home_off": [],  # Home sections the owner turned off for everyone (on top of each person's own layout)
     "show_requester": True,  # posters show the first name of whoever asked for it
     "office_on": True,  # the Office: a live building of what's playing, downloading and being searched for
-    "office_names": False,  # everyone sees who's watching what in the Office (admins always do; otherwise "someone")
+    "office_names": True,  # everyone sees who's watching what in the Office (off: "someone"; admins always see everything)
     "swipe_on": True,  # Swipe (trailers, right to request) for everyone the owner allows
     "match_on": True,  # Movie Match links (swipe the owner's library with someone)
     # Discord only opens accounts that already have a Plex or Jellyfin sign-in (so it's someone with access to the owner's server)

@@ -4131,7 +4131,7 @@ async function paneSystem(el) {
     <div class="list" id="officeSw">
       <label class="li"><span class="switch"><input type="checkbox" id="ofOn" ${SETUP.cfg.office_on !== false ? "checked" : ""}><i></i></span>
         <div class="body"><div class="t">Open the Office</div><div class="s">A live building: who's watching, what's downloading, what's being searched for</div></div></label>
-      <label class="li"><span class="switch"><input type="checkbox" id="ofNames" ${SETUP.cfg.office_names ? "checked" : ""}><i></i></span>
+      <label class="li"><span class="switch"><input type="checkbox" id="ofNames" ${SETUP.cfg.office_names !== false ? "checked" : ""}><i></i></span>
         <div class="body"><div class="t">Everyone sees who's watching what</div><div class="s">Off: people see themselves, and everyone else as "Someone watching something". Admins always see everything.</div></div></label></div>
     <p class="foot">Anything turned off here is gone from everyone's Home. People still arrange what's left in their own Home layout.</p>
     <h2>At a glance</h2>${STEPS.done.html().replace(/<h1>[\s\S]*?<\/p>/, "")}
