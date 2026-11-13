@@ -8,18 +8,69 @@ import SwiftUI
 struct SeasonalLayer: View {
     @AppStorage("season") private var on = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var art = SeasonArt.shared
 
     var body: some View {
         if on && !reduceMotion {
+            let snap = art.snapshot
             TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
                 Canvas { ctx, size in
-                    HolidaySeason.current.draw(&ctx, size, tl.date.timeIntervalSinceReferenceDate)
+                    HolidaySeason.current.draw(&ctx, size, tl.date.timeIntervalSinceReferenceDate, snap)
                 }
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .ignoresSafeArea()
+            .task { await art.load(HolidaySeason.current) }
         }
+    }
+}
+
+/// What the drawing code gets: a plain copy of the loaded art (drawing runs outside the main actor).
+struct ArtSnapshot {
+    var scene: Image?
+    var sceneSize = CGSize.zero
+    var moon: Image?
+    var leaves: [Image] = []
+    var walker: [Image] = []
+}
+
+/// PixelLab pixel art for a season, loaded from the NuniFlix server (web/season/<season>/), so it can change without
+/// an app update. Seasons without art (or before it arrives) use the drawn shapes.
+@MainActor
+final class SeasonArt: ObservableObject {
+    static let shared = SeasonArt()
+    @Published private(set) var scene: Image?
+    @Published private(set) var sceneSize = CGSize.zero
+    @Published private(set) var moon: Image?
+    @Published private(set) var leaves: [Image] = []
+    @Published private(set) var walker: [Image] = []
+    private var loaded: String?
+    var snapshot: ArtSnapshot { ArtSnapshot(scene: scene, sceneSize: sceneSize, moon: moon, leaves: leaves, walker: walker) }
+
+    /// What each season has, the same files the website uses (season.js ART).
+    private static let files: [String: (scene: String?, moon: String?, leaves: (String, Int)?, walker: (String, Int)?)] = [
+        "fall": ("scene.png", "moon.png", ("leaves.png", 5), ("turkey.png", 8)),
+    ]
+
+    func load(_ season: HolidaySeason) async {
+        guard loaded != season.rawValue, let base = API.shared.base, let f = Self.files[season.rawValue] else { return }
+        loaded = season.rawValue
+        func fetch(_ name: String) async -> CGImage? {
+            guard let url = URL(string: "\(base.absoluteString)/season/\(season.rawValue)/\(name)"),
+                  let (data, resp) = try? await URLSession.shared.data(from: url),
+                  (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            return UIImage(data: data)?.cgImage
+        }
+        func pixel(_ cg: CGImage) -> Image { Image(decorative: cg, scale: 1).interpolation(.none) }
+        func slices(_ cg: CGImage, _ n: Int) -> [Image] {
+            let w = cg.width / n
+            return (0..<n).compactMap { cg.cropping(to: CGRect(x: $0 * w, y: 0, width: w, height: cg.height)) }.map(pixel)
+        }
+        if let name = f.scene, let cg = await fetch(name) { scene = pixel(cg); sceneSize = CGSize(width: cg.width, height: cg.height) }
+        if let name = f.moon, let cg = await fetch(name) { moon = pixel(cg) }
+        if let (name, n) = f.leaves, let cg = await fetch(name) { leaves = slices(cg, n) }
+        if let (name, n) = f.walker, let cg = await fetch(name) { walker = slices(cg, n) }
     }
 }
 
@@ -78,16 +129,44 @@ enum HolidaySeason: String {
         return x - x.rounded(.down)
     }
 
-    func draw(_ ctx: inout GraphicsContext, _ size: CGSize, _ t: Double) {
+    func draw(_ ctx: inout GraphicsContext, _ size: CGSize, _ t: Double, _ art: ArtSnapshot) {
         let W = size.width, H = size.height
-        for i in 0..<count { particle(&ctx, i, W, H, t) }
+        backdrop(&ctx, W, H, art)
+        for i in 0..<count { particle(&ctx, i, W, H, t, art) }
         if eyes { drawEyes(&ctx, W, H, t) }
-        if let cameo { drawCameo(&ctx, cameo, W, H, t) }
+        if let cameo { drawCameo(&ctx, cameo, W, H, t, art) }
+    }
+
+    /// The harvest moon up in a corner and the scene strip along the bottom, faded in at its top like mist.
+    private func backdrop(_ ctx: inout GraphicsContext, _ W: Double, _ H: Double, _ art: ArtSnapshot) {
+        if let moon = art.moon {
+            var c = ctx
+            c.opacity = 0.55
+            c.draw(moon, in: CGRect(x: W - 176 - W * 0.07, y: H * 0.22, width: 176, height: 176))  // below the top bar's buttons
+        }
+        if let scene = art.scene, art.sceneSize.height > 0 {
+            let k = max(2, (H * 0.17 / art.sceneSize.height).rounded()), w = art.sceneSize.width * k, h = art.sceneSize.height * k
+            let top = H - 40 - h + 2
+            ctx.drawLayer { layer in
+                layer.opacity = 0.6
+                var x = 0.0, i = 0
+                while x < W {  // every other tile mirrored so the seams meet
+                    var tile = layer
+                    if i % 2 == 1 { tile.translateBy(x: x + w, y: top); tile.scaleBy(x: -1, y: 1); tile.draw(scene, in: CGRect(x: 0, y: 0, width: w, height: h)) }
+                    else { tile.draw(scene, in: CGRect(x: x, y: top, width: w, height: h)) }
+                    x += w; i += 1
+                }
+                layer.blendMode = .destinationIn
+                layer.fill(Path(CGRect(x: 0, y: top, width: W, height: h)),
+                           with: .linearGradient(Gradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.55)]),
+                                                 startPoint: CGPoint(x: 0, y: top), endPoint: CGPoint(x: 0, y: top + h)))
+            }
+        }
     }
 
     private static let leafColors: [Color] = [0xB8461B, 0xA5541A, 0x8A3A14, 0xC2741C, 0x7A2E12, 0x9C6A17].map { Color(hex: $0) }
 
-    private func particle(_ ctx: inout GraphicsContext, _ i: Int, _ W: Double, _ H: Double, _ t: Double) {
+    private func particle(_ ctx: inout GraphicsContext, _ i: Int, _ W: Double, _ H: Double, _ t: Double, _ art: ArtSnapshot) {
         switch kind {
         case .snow:
             let speed = 18 + r(i, 1) * 34, rad = 1.2 + r(i, 2) * 2.4
@@ -103,6 +182,12 @@ enum HolidaySeason: String {
             c.translateBy(x: x, y: y)
             c.rotate(by: .radians(r(i, 8) * 6.28 + t * (r(i, 9) - 0.5) * 1.2))
             c.opacity = leaf ? 0.45 + r(i, 7) * 0.25 : 0.35 + r(i, 7) * 0.25
+            if leaf, !art.leaves.isEmpty {  // pixel-art leaf
+                let sz = rad * 2.4
+                c.opacity = min(0.85, c.opacity + 0.15)
+                c.draw(art.leaves[i % art.leaves.count], in: CGRect(x: -sz / 2, y: -sz / 2, width: sz, height: sz))
+                return
+            }
             var p = Path()
             if leaf {
                 p.move(to: CGPoint(x: 0, y: -rad))
@@ -144,7 +229,7 @@ enum HolidaySeason: String {
     }
 
     /// Every ~95 seconds something crosses the bottom of the screen, alternating direction.
-    private func drawCameo(_ ctx: inout GraphicsContext, _ which: Cameo, _ W: Double, _ H: Double, _ t: Double) {
+    private func drawCameo(_ ctx: inout GraphicsContext, _ which: Cameo, _ W: Double, _ H: Double, _ t: Double, _ art: ArtSnapshot) {
         var period = 95.0
         let dur = which == .bats ? 10.0 : 18.0
         #if DEBUG
@@ -162,7 +247,13 @@ enum HolidaySeason: String {
         let px = right ? x : W - x, ph = phase * 6
         switch which {
         case .krampus: krampus(&c, px, g, s, ph)
-        case .turkey: turkey(&c, px, g, s, ph)
+        case .turkey:
+            if !art.walker.isEmpty {  // the PixelLab turkey's walk cycle, 3x
+                let f = Int(phase * 9) % art.walker.count, sz = 64.0 * 3
+                c.draw(art.walker[f], in: CGRect(x: px - sz / 2, y: g - 61 * 3, width: sz, height: sz))
+            } else {
+                turkey(&c, px, g, s, ph)
+            }
         case .bats: bats(&c, px, H * 0.3, s, ph)
         }
     }

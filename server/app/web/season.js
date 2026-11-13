@@ -41,12 +41,52 @@
     spring: {p: "petal", per: 90000, max: 12},
     summer: {p: "fly", per: 90000, max: 14},
   };
+  // PixelLab pixel art (web/season/<season>/), drawn crisp. Seasons without art use the drawn shapes below.
+  const ART = {fall: {dir: "/season/fall/", scene: "scene.png", moon: "moon.png", leaves: ["leaves.png", 5, 32], walker: ["turkey.png", 8, 64]}};
+  const art = {};  // loaded images for the current season
+  function loadArt() {
+    const a = ART[season];
+    for (const k of Object.keys(art)) delete art[k];
+    if (!a) return;
+    const img = (key, file) => { const i = new Image(); i.onload = () => { art[key] = i; sceneLayer = null; }; i.src = a.dir + file; };
+    if (a.scene) img("scene", a.scene);
+    if (a.moon) img("moon", a.moon);
+    if (a.leaves) img("leaves", a.leaves[0]);
+    if (a.walker) img("walker", a.walker[0]);
+  }
+  let sceneLayer = null, sceneFor = "";  // the scene strip, tiled across the width and faded at the top, built once per size
+  function buildScene() {
+    const a = ART[season], im = art.scene;
+    const k = Math.max(2, Math.round(H * 0.17 / im.height)), w = im.width * k, h = im.height * k;
+    const c = document.createElement("canvas"); c.width = W; c.height = h;
+    const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+    for (let x = 0, i = 0; x < W; x += w, i++) {  // every other tile mirrored, so the seams match up
+      g.save(); if (i % 2) { g.translate(x + w, 0); g.scale(-1, 1); g.drawImage(im, 0, 0, w, h); } else g.drawImage(im, x, 0, w, h); g.restore();
+    }
+    g.globalCompositeOperation = "destination-in";  // misty top: fades in from nothing
+    const fade = g.createLinearGradient(0, 0, 0, h); fade.addColorStop(0, "rgba(0,0,0,0)"); fade.addColorStop(0.55, "rgba(0,0,0,1)");
+    g.fillStyle = fade; g.fillRect(0, 0, W, h);
+    sceneLayer = c; sceneFor = `${W}x${H}`;
+  }
+  function drawBackdrop() {
+    if (art.moon) {
+      const k = W < 600 ? 1.5 : W < 1400 ? 2 : 3, sz = art.moon.width * k;
+      ctx.globalAlpha = light ? 0.35 : 0.55; ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(art.moon, W - sz - W * 0.06, H * 0.07, sz, sz);
+    }
+    if (art.scene) {
+      if (!sceneLayer || sceneFor !== `${W}x${H}`) buildScene();
+      ctx.globalAlpha = light ? 0.3 : 0.6;
+      ctx.drawImage(sceneLayer, 0, ground() - sceneLayer.height + 2);
+    }
+    ctx.globalAlpha = 1;
+  }
   const LEAF = ["#b8461b", "#a5541a", "#8a3a14", "#c2741c", "#7a2e12", "#9c6a17"];
 
   function particle(kind, anywhere) {
     const p = {x: rnd(0, W), y: anywhere ? rnd(0, H) : rnd(-40, -10), t: rnd(0, 6.28)};
     if (kind === "snow") Object.assign(p, {r: rnd(0.8, 2.6), vy: rnd(0.25, 0.8), sway: rnd(0.2, 0.7), a: rnd(0.3, 0.75)});
-    if (kind === "leaf") Object.assign(p, {r: rnd(6, 12), vy: rnd(0.35, 0.8), sway: rnd(0.6, 1.4), a: rnd(0.45, 0.7), rot: rnd(0, 6.28), vr: rnd(-0.02, 0.02), c: pick(LEAF)});
+    if (kind === "leaf") Object.assign(p, {k: Math.floor(rnd(0, 5)), r: rnd(6, 12), vy: rnd(0.35, 0.8), sway: rnd(0.6, 1.4), a: rnd(0.45, 0.7), rot: rnd(0, 6.28), vr: rnd(-0.02, 0.02), c: pick(LEAF)});
     if (kind === "petal") Object.assign(p, {r: rnd(3, 5), vy: rnd(0.25, 0.55), sway: rnd(0.5, 1), a: rnd(0.35, 0.6), rot: rnd(0, 6.28), vr: rnd(-0.02, 0.02)});
     if (kind === "fly") Object.assign(p, {y: rnd(H * 0.3, H), r: rnd(1.2, 2.2), vx: rnd(-0.25, 0.25), vy: rnd(-0.15, 0.15), a: 0});
     return p;
@@ -64,6 +104,12 @@
 
   // ---------- particles ----------
   function drawLeaf(p) {
+    if (art.leaves) {  // pixel-art leaf
+      const n = ART[season].leaves[2], sz = p.r * 2.4;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = Math.min(0.85, p.a + 0.15); ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(art.leaves, p.k * n, 0, n, n, -sz / 2, -sz / 2, sz, sz); ctx.restore();
+      return;
+    }
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = p.a; ctx.fillStyle = p.c;
     ctx.beginPath(); ctx.moveTo(0, -p.r); ctx.quadraticCurveTo(p.r * 0.9, 0, 0, p.r); ctx.quadraticCurveTo(-p.r * 0.9, 0, 0, -p.r); ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,.25)"; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(0, -p.r); ctx.lineTo(0, p.r * 1.3); ctx.stroke();
@@ -110,7 +156,16 @@
     ctx.restore();
     eyesAt(x + 11 * s, g - 67 * s, 1.3 * s);
   }
-  function turkey(x, g, s, ph) {  // round body, fanned tail, an axe over the shoulder; struts right
+  function turkey(x, g, s, ph) {  // the PixelLab turkey's walk cycle when it's loaded, else the drawn one
+    if (art.walker) {
+      const [, frames, n] = ART[season].walker, k = W < 600 ? 1.5 : W < 1400 ? 2.2 : 3, f = Math.floor(ph * 1.45) % frames;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(art.walker, f * n, 0, n, n, x - n * k / 2, g - (n - 3) * k, n * k, n * k);
+      return;
+    }
+    turkeyDrawn(x, g, s, ph);
+  }
+  function turkeyDrawn(x, g, s, ph) {  // round body, fanned tail, an axe over the shoulder; struts right
     ctx.save(); ctx.translate(x, g); ctx.scale(s, s); ctx.fillStyle = SIL; ctx.strokeStyle = SIL; ctx.lineCap = "round";
     const sw = Math.sin(ph) * 5, bob = Math.abs(Math.sin(ph)) * 2;
     for (let i = -3; i <= 3; i++) { ctx.save(); ctx.translate(-8, -30 - bob); ctx.rotate(i * 0.32 - 0.5); ctx.beginPath(); ctx.ellipse(0, -18, 5, 16, 0, 0, 6.28); ctx.fill(); ctx.restore(); }  // tail fan
@@ -175,6 +230,7 @@
     const dt = Math.min(3, (now - (last || now)) / 16.7); last = now;
     ctx.clearRect(0, 0, W, H);
     checkLight(now);
+    drawBackdrop();
     const kind = KIND[season].p;
     for (const p of parts) step(p, kind, dt);
     ctx.globalAlpha = 1;
@@ -193,7 +249,7 @@
       ctx = cv.getContext("2d");
       addEventListener("resize", () => on && resize());
     }
-    cv.hidden = false; parts = []; resize();
+    cv.hidden = false; parts = []; resize(); loadArt();
     const now = performance.now();
     nextCameo = now + (qs.get("cameo") === "now" ? 800 : rnd(20000, 40000)); nextEyes = now + rnd(15000, 30000);
     last = 0; raf = requestAnimationFrame(frame);
