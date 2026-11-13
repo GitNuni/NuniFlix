@@ -31,7 +31,8 @@ struct ArtSnapshot {
     var scene: Image?
     var sceneSize = CGSize.zero
     var moon: Image?
-    var leaves: [Image] = []
+    var leaves: [Image] = []      // the season's falling sprites: leaves, flakes or petals
+    var flyer: [Image] = []
     var walker: [Image] = []
 }
 
@@ -45,19 +46,27 @@ final class SeasonArt: ObservableObject {
     @Published private(set) var moon: Image?
     @Published private(set) var leaves: [Image] = []
     @Published private(set) var walker: [Image] = []
+    @Published private(set) var flyer: [Image] = []
     private var loaded: String?
-    var snapshot: ArtSnapshot { ArtSnapshot(scene: scene, sceneSize: sceneSize, moon: moon, leaves: leaves, walker: walker) }
+    var snapshot: ArtSnapshot { ArtSnapshot(scene: scene, sceneSize: sceneSize, moon: moon, leaves: leaves, flyer: flyer, walker: walker) }
 
     /// What each season has, the same files the website uses (season.js ART).
-    private static let files: [String: (scene: String?, moon: String?, leaves: (String, Int)?, walker: (String, Int)?)] = [
-        "fall": ("scene.png", "moon.png", ("leaves.png", 5), ("turkey.png", 8)),
+    private typealias Files = (scene: String?, moon: String?, leaves: (String, Int)?, walker: (String, Int)?, flyer: (String, Int)?)
+    private static let files: [String: Files] = [
+        "fall": ("scene.png", "moon.png", ("leaves.png", 5), ("turkey.png", 8), nil),
+        "halloween": ("scene.png", "moon.png", ("leaves.png", 5), nil, ("bat.png", 6)),
+        "christmas": ("scene.png", "moon.png", ("flakes.png", 2), ("krampus.png", 8), nil),
+        "winter": ("scene.png", nil, ("flakes.png", 2), nil, nil),
+        "spring": ("scene.png", nil, ("petals.png", 2), nil, nil),
+        "summer": ("scene.png", nil, nil, nil, nil),
     ]
 
     func load(_ season: HolidaySeason) async {
-        guard loaded != season.rawValue, let base = API.shared.base, let f = Self.files[season.rawValue] else { return }
+        let folder = season.artFolder
+        guard loaded != season.rawValue, let base = API.shared.base, let f = Self.files[folder] else { return }
         loaded = season.rawValue
         func fetch(_ name: String) async -> CGImage? {
-            guard let url = URL(string: "\(base.absoluteString)/season/\(season.rawValue)/\(name)"),
+            guard let url = URL(string: "\(base.absoluteString)/season/\(folder)/\(name)"),
                   let (data, resp) = try? await URLSession.shared.data(from: url),
                   (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             return UIImage(data: data)?.cgImage
@@ -70,7 +79,8 @@ final class SeasonArt: ObservableObject {
         if let name = f.scene, let cg = await fetch(name) { scene = pixel(cg); sceneSize = CGSize(width: cg.width, height: cg.height) }
         if let name = f.moon, let cg = await fetch(name) { moon = pixel(cg) }
         if let (name, n) = f.leaves, let cg = await fetch(name) { leaves = slices(cg, n) }
-        if let (name, n) = f.walker, let cg = await fetch(name) { walker = slices(cg, n) }
+        if season != .autumn, let (name, n) = f.walker, let cg = await fetch(name) { walker = slices(cg, n) }  // September: no cameo
+        if let (name, n) = f.flyer, let cg = await fetch(name) { flyer = slices(cg, n) }
     }
 }
 
@@ -193,7 +203,15 @@ enum HolidaySeason: String {
             let speed = 18 + r(i, 1) * 34, rad = 1.2 + r(i, 2) * 2.4
             let y = (r(i, 3) * (H + 40) + t * speed).truncatingRemainder(dividingBy: H + 40) - 20
             let x = r(i, 4) * W + sin(t * (0.4 + r(i, 5)) + r(i, 6) * 6) * 14
-            ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: rad * 2, height: rad * 2)), with: .color(.white.opacity(0.3 + r(i, 7) * 0.45)))
+            if rad > 2.4, !art.leaves.isEmpty {  // the bigger flakes are pixel-art flakes
+                var c = ctx
+                c.translateBy(x: x, y: y); c.rotate(by: .radians(t * 0.3 + r(i, 8) * 6))
+                c.opacity = 0.35 + r(i, 7) * 0.45
+                let sz = rad * 5
+                c.draw(art.leaves[i % art.leaves.count], in: CGRect(x: -sz / 2, y: -sz / 2, width: sz, height: sz))
+            } else {
+                ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: rad * 2, height: rad * 2)), with: .color(.white.opacity(0.3 + r(i, 7) * 0.45)))
+            }
         case .leaf, .petal:
             let leaf = kind == .leaf
             let speed = leaf ? 22 + r(i, 1) * 26 : 14 + r(i, 1) * 16, rad = leaf ? 9 + r(i, 2) * 9 : 4 + r(i, 2) * 3
@@ -203,8 +221,8 @@ enum HolidaySeason: String {
             c.translateBy(x: x, y: y)
             c.rotate(by: .radians(r(i, 8) * 6.28 + t * (r(i, 9) - 0.5) * 1.2))
             c.opacity = leaf ? 0.45 + r(i, 7) * 0.25 : 0.35 + r(i, 7) * 0.25
-            if leaf, !art.leaves.isEmpty {  // pixel-art leaf
-                let sz = rad * 2.4
+            if !art.leaves.isEmpty {  // pixel-art leaf / petal
+                let sz = leaf ? rad * 2.4 : rad * 4.5
                 c.opacity = min(0.85, c.opacity + 0.15)
                 c.draw(art.leaves[i % art.leaves.count], in: CGRect(x: -sz / 2, y: -sz / 2, width: sz, height: sz))
                 return
@@ -267,15 +285,25 @@ enum HolidaySeason: String {
         if !right { c.translateBy(x: W, y: 0); c.scaleBy(x: -1, y: 1) }
         let px = right ? x : W - x, ph = phase * 6
         switch which {
-        case .krampus: krampus(&c, px, g, s, ph)
-        case .turkey:
-            if !art.walker.isEmpty {  // the PixelLab turkey's walk cycle, 3x
+        case .krampus, .turkey:
+            if !art.walker.isEmpty {  // the PixelLab walk cycle (turkey or Krampus), 3x
                 let f = Int(phase * 9) % art.walker.count, sz = 64.0 * 3
                 c.draw(art.walker[f], in: CGRect(x: px - sz / 2, y: g - 61 * 3, width: sz, height: sz))
+            } else if which == .krampus {
+                krampus(&c, px, g, s, ph)
             } else {
                 turkey(&c, px, g, s, ph)
             }
-        case .bats: bats(&c, px, H * 0.3, s, ph)
+        case .bats:
+            if !art.flyer.isEmpty {  // a loose flock of PixelLab bats, each a little out of step
+                for i in 0..<5 {
+                    let d = Double(i), sz = 48.0 * 2.2
+                    let bx = px - d * 90, by = H * 0.3 + sin(ph * 0.6 + d * 1.7) * 30 + d * 20
+                    c.draw(art.flyer[(Int(phase * 12) + i * 2) % art.flyer.count], in: CGRect(x: bx - sz / 2, y: by - sz / 2, width: sz, height: sz))
+                }
+            } else {
+                bats(&c, px, H * 0.3, s, ph)
+            }
         }
     }
 

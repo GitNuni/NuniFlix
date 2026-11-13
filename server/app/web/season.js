@@ -44,7 +44,16 @@
     summer: {p: "fly", per: 90000, max: 14},
   };
   // PixelLab pixel art (web/season/<season>/), drawn crisp. Seasons without art use the drawn shapes below.
-  const ART = {fall: {dir: "/season/fall/", scene: "scene.png", moon: "moon.png", leaves: ["leaves.png", 5, 32], walker: ["turkey.png", 8, 64]}};
+  // sprites: the falling particles; walker: the cameo's walk cycle; flyer: a flock's flap cycle. [file, frames, size]
+  const ART = {
+    fall: {dir: "/season/fall/", scene: "scene.png", moon: "moon.png", sprites: ["leaves.png", 5, 32], walker: ["turkey.png", 8, 64]},
+    autumn: {dir: "/season/fall/", scene: "scene.png", moon: "moon.png", sprites: ["leaves.png", 5, 32]},
+    halloween: {dir: "/season/halloween/", scene: "scene.png", moon: "moon.png", sprites: ["leaves.png", 5, 32], flyer: ["bat.png", 6, 48]},
+    christmas: {dir: "/season/christmas/", scene: "scene.png", moon: "moon.png", sprites: ["flakes.png", 2, 32], walker: ["krampus.png", 8, 64]},
+    winter: {dir: "/season/winter/", scene: "scene.png", sprites: ["flakes.png", 2, 32]},
+    spring: {dir: "/season/spring/", scene: "scene.png", sprites: ["petals.png", 2, 32]},
+    summer: {dir: "/season/summer/", scene: "scene.png"},
+  };
   const art = {};  // loaded images for the current season
   function loadArt() {
     const a = ART[season];
@@ -53,7 +62,8 @@
     const img = (key, file) => { const i = new Image(); i.onload = () => { art[key] = i; sceneLayer = null; }; i.src = a.dir + file; };
     if (a.scene) img("scene", a.scene);
     if (a.moon) img("moon", a.moon);
-    if (a.leaves) img("leaves", a.leaves[0]);
+    if (a.sprites) img("sprites", a.sprites[0]);
+    if (a.flyer) img("flyer", a.flyer[0]);
     if (a.walker) img("walker", a.walker[0]);
   }
   let sceneLayer = null, sceneFor = "";  // the scene strip, tiled across the width and faded at the top, built once per size
@@ -87,9 +97,9 @@
 
   function particle(kind, anywhere) {
     const p = {x: rnd(0, W), y: anywhere ? rnd(0, H) : rnd(-40, -10), t: rnd(0, 6.28)};
-    if (kind === "snow") Object.assign(p, {r: rnd(0.8, 2.6), vy: rnd(0.25, 0.8), sway: rnd(0.2, 0.7), a: rnd(0.3, 0.75)});
+    if (kind === "snow") Object.assign(p, {k: Math.floor(rnd(0, 4)), r: rnd(0.8, 2.6), vy: rnd(0.25, 0.8), sway: rnd(0.2, 0.7), a: rnd(0.3, 0.75)});
     if (kind === "leaf") Object.assign(p, {k: Math.floor(rnd(0, 5)), r: rnd(6, 12), vy: rnd(0.35, 0.8), sway: rnd(0.6, 1.4), a: rnd(0.45, 0.7), rot: rnd(0, 6.28), vr: rnd(-0.02, 0.02), c: pick(LEAF)});
-    if (kind === "petal") Object.assign(p, {r: rnd(3, 5), vy: rnd(0.25, 0.55), sway: rnd(0.5, 1), a: rnd(0.35, 0.6), rot: rnd(0, 6.28), vr: rnd(-0.02, 0.02)});
+    if (kind === "petal") Object.assign(p, {k: Math.floor(rnd(0, 4)), r: rnd(3, 5), vy: rnd(0.25, 0.55), sway: rnd(0.5, 1), a: rnd(0.35, 0.6), rot: rnd(0, 6.28), vr: rnd(-0.02, 0.02)});
     if (kind === "fly") Object.assign(p, {y: rnd(H * 0.3, H), r: rnd(1.2, 2.2), vx: rnd(-0.25, 0.25), vy: rnd(-0.15, 0.15), a: 0});
     return p;
   }
@@ -106,10 +116,10 @@
 
   // ---------- particles ----------
   function drawLeaf(p) {
-    if (art.leaves) {  // pixel-art leaf
-      const n = ART[season].leaves[2], sz = p.r * 2.4;
+    if (art.sprites) {  // pixel-art leaf
+      const [, cnt, n] = ART[season].sprites, sz = p.r * 2.4; p.k %= cnt;
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = Math.min(0.85, p.a + 0.15); ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(art.leaves, p.k * n, 0, n, n, -sz / 2, -sz / 2, sz, sz); ctx.restore();
+      ctx.drawImage(art.sprites, p.k * n, 0, n, n, -sz / 2, -sz / 2, sz, sz); ctx.restore();
       return;
     }
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = p.a; ctx.fillStyle = p.c;
@@ -130,8 +140,18 @@
     p.y += p.vy * dt; p.x += Math.sin(p.t) * p.sway * 0.5 * dt;
     if (p.rot !== undefined) p.rot += p.vr * dt;
     if (p.y > H + 20) Object.assign(p, particle(kind, false));
-    if (kind === "snow") { ctx.globalAlpha = p.a; ctx.fillStyle = light ? "#9fb0c6" : "#fff"; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); }
+    if (kind === "snow" && art.sprites && p.r > 1.7 && !light) {  // the bigger flakes are pixel-art flakes, the small ones dots
+      const [, cnt, n] = ART[season].sprites, sz = p.r * 5;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.t * 0.3); ctx.globalAlpha = p.a; ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(art.sprites, ((p.k || 0) % cnt) * n, 0, n, n, -sz / 2, -sz / 2, sz, sz); ctx.restore();
+    }
+    else if (kind === "snow") { ctx.globalAlpha = p.a; ctx.fillStyle = light ? "#9fb0c6" : "#fff"; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill(); }
     else if (kind === "leaf") drawLeaf(p);
+    else if (art.sprites) {  // pixel-art petal
+      const [, cnt, n] = ART[season].sprites, sz = p.r * 4.5;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = Math.min(0.85, p.a + 0.2); ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(art.sprites, ((p.k || 0) % cnt) * n, 0, n, n, -sz / 2, -sz / 2, sz, sz); ctx.restore();
+    }
     else { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = p.a; ctx.fillStyle = "#f9c6d3";
       ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r * 0.6, 0, 0, 6.28); ctx.fill(); ctx.restore(); }
   }
@@ -143,7 +163,17 @@
     ctx.fillStyle = "#ff2a2a"; ctx.shadowColor = "#ff0000"; ctx.shadowBlur = 6;
     ctx.beginPath(); ctx.arc(x - r * 1.8, y, r, 0, 6.28); ctx.arc(x + r * 1.8, y, r, 0, 6.28); ctx.fill(); ctx.shadowBlur = 0;
   }
-  function krampus(x, g, s, ph) {  // hunched, horned, chains and a birch switch; walks right
+  function walker(x, g, ph) {  // a PixelLab walk cycle (the turkey, Krampus); true if there was one to draw
+    if (!art.walker) return false;
+    const [, frames, n] = ART[season].walker, k = W < 600 ? 1.5 : W < 1400 ? 2.2 : 3, f = Math.floor(ph * 1.45) % frames;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(art.walker, f * n, 0, n, n, x - n * k / 2, g - (n - 3) * k, n * k, n * k);
+    return true;
+  }
+  function krampus(x, g, s, ph) {
+    if (!walker(x, g, ph)) krampusDrawn(x, g, s, ph);
+  }
+  function krampusDrawn(x, g, s, ph) {  // hunched, horned, chains and a birch switch; walks right
     ctx.save(); ctx.translate(x, g); ctx.scale(s, s); ctx.fillStyle = SIL; ctx.strokeStyle = SIL; ctx.lineCap = "round";
     const sw = Math.sin(ph) * 6;
     ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-6, -34); ctx.lineTo(-8 + sw, -16); ctx.lineTo(-12 + sw, 0); ctx.moveTo(4, -34); ctx.lineTo(6 - sw, -16); ctx.lineTo(2 - sw, 0); ctx.stroke();  // goat legs
@@ -159,13 +189,7 @@
     eyesAt(x + 11 * s, g - 67 * s, 1.3 * s);
   }
   function turkey(x, g, s, ph) {  // the PixelLab turkey's walk cycle when it's loaded, else the drawn one
-    if (art.walker) {
-      const [, frames, n] = ART[season].walker, k = W < 600 ? 1.5 : W < 1400 ? 2.2 : 3, f = Math.floor(ph * 1.45) % frames;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(art.walker, f * n, 0, n, n, x - n * k / 2, g - (n - 3) * k, n * k, n * k);
-      return;
-    }
-    turkeyDrawn(x, g, s, ph);
+    if (!walker(x, g, ph)) turkeyDrawn(x, g, s, ph);
   }
   function turkeyDrawn(x, g, s, ph) {  // round body, fanned tail, an axe over the shoulder; struts right
     ctx.save(); ctx.translate(x, g); ctx.scale(s, s); ctx.fillStyle = SIL; ctx.strokeStyle = SIL; ctx.lineCap = "round";
@@ -189,6 +213,15 @@
     eyesAt(x + 13 * s, g - 53 * s, 1.1 * s);
   }
   function bats(x, g, s, ph) {
+    if (art.flyer) {  // a loose flock of PixelLab bats, each a little out of step
+      const [, frames, n] = ART[season].flyer, k = W < 600 ? 1 : 1.6;
+      ctx.imageSmoothingEnabled = false;
+      for (let i = 0; i < 5; i++) {
+        const bx = x - i * 46 * k, by = g * 0.32 + Math.sin(ph * 0.6 + i * 1.7) * 22 + i * 14, f = Math.floor(ph * 2 + i * 2) % frames;
+        ctx.drawImage(art.flyer, f * n, 0, n, n, bx - n * k / 2, by - n * k / 2, n * k, n * k);
+      }
+      return;
+    }
     ctx.fillStyle = SIL;
     for (let i = 0; i < 6; i++) {
       const bx = x - i * 26 * s, by = g * 0.35 + Math.sin(ph * 0.6 + i) * 18 + i * 9, f = Math.sin(ph * 3 + i) * 5 * s;
