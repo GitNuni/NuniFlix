@@ -2,13 +2,21 @@
 # Archive both apps and upload them to TestFlight (App Store Connect).
 #   apple/scripts/testflight.sh            # uses the build number in project.yml
 # Bump CURRENT_PROJECT_VERSION in project.yml before each upload: App Store Connect refuses a build number twice.
-# Needs Xcode signed in to the team's Apple ID (Xcode → Settings → Accounts).
+# Signs in with an App Store Connect API key when ~/.appstoreconnect/nuniflix.env exists
+# (ASC_KEY_ID, ASC_ISSUER_ID; the key file at ~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8),
+# otherwise with the Apple ID in Xcode → Settings → Accounts.
 # Archives unsigned and signs during export, so no registered test devices are needed.
 set -e
 cd "$(dirname "$0")/.."
-xcodegen -q
+AUTH=""
+if [ -f "$HOME/.appstoreconnect/nuniflix.env" ]; then
+  . "$HOME/.appstoreconnect/nuniflix.env"
+  AUTH="-authenticationKeyPath $HOME/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8 -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
+fi
+if [ "$1" = "--upload-only" ]; then UPLOAD_ONLY=1; fi
 OUT="${TMPDIR:-/tmp}/nuniflix-testflight"
-rm -rf "$OUT" && mkdir -p "$OUT"
+if [ -z "$UPLOAD_ONLY" ]; then xcodegen -q; rm -rf "$OUT"; fi
+mkdir -p "$OUT"
 cat > "$OUT/export.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -21,10 +29,14 @@ cat > "$OUT/export.plist" <<PLIST
 PLIST
 for pair in "NuniFlix-iOS:iOS" "NuniFlix-TV:tvOS"; do
   scheme="${pair%%:*}"; platform="${pair##*:}"
-  echo "== $scheme: archiving"
-  xcodebuild -quiet -project NuniFlix.xcodeproj -scheme "$scheme" -destination "generic/platform=$platform" \
-    -archivePath "$OUT/$scheme.xcarchive" CODE_SIGNING_ALLOWED=NO archive
+  if [ -z "$UPLOAD_ONLY" ]; then
+    echo "== $scheme: archiving"
+    xcodebuild -quiet -project NuniFlix.xcodeproj -scheme "$scheme" -destination "generic/platform=$platform" \
+      -archivePath "$OUT/$scheme.xcarchive" CODE_SIGNING_ALLOWED=NO archive
+  fi
   echo "== $scheme: signing and uploading"
+  rm -rf "$OUT/$scheme"
+  # shellcheck disable=SC2086
   xcodebuild -exportArchive -archivePath "$OUT/$scheme.xcarchive" -exportOptionsPlist "$OUT/export.plist" \
-    -exportPath "$OUT/$scheme" -allowProvisioningUpdates 2>&1 | grep -E "error|Upload succeeded|EXPORT" || true
+    -exportPath "$OUT/$scheme" -allowProvisioningUpdates $AUTH 2>&1 | grep -E "error|Upload succeeded|EXPORT|required" || true
 done
