@@ -1,5 +1,8 @@
 import SwiftUI
 import CoreImage.CIFilterBuiltins
+#if os(iOS)
+import AuthenticationServices
+#endif
 
 /// First run: where's the NuniFlix server?
 struct ServerView: View {
@@ -10,7 +13,7 @@ struct ServerView: View {
 
     var body: some View {
         VStack(spacing: 30) {
-            Text("NuniFlix").font(.system(size: 64, weight: .black)).foregroundStyle(Color(hex: 0xE50914))
+            Text(model.appTheme.uppercase ? "NUNIFLIX" : "NuniFlix").font(model.appTheme.font(64)).foregroundStyle(model.appTheme.brandColor)
             Text("What's your NuniFlix address?").font(.title2)
             Text("The same one you open in the browser, like http://192.168.0.49:8095 or https://requests.example.com")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -34,7 +37,7 @@ struct ServerView: View {
         }
         .padding(Metrics.gutter)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(ServiceTheme.nuniflix.backgroundView)
+        .background(model.appTheme.backgroundView)
     }
 
     private func connect() async {
@@ -66,37 +69,82 @@ struct SignInView: View {
     @State private var showPassword = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 34) {
-                Text(model.brand).font(.system(size: 56, weight: .black)).foregroundStyle(Color(hex: 0xE50914))
-                #if os(tvOS)
-                TVCodeView()
-                #else
-                PhoneSignIn(options: options)
-                #endif
-                if options?.jellyfin == true {
-                    Button(showPassword ? "Hide" : "Sign in with a Jellyfin username and password") { showPassword.toggle() }
-                        #if os(iOS)
-                        .buttonStyle(.bordered)
-                        #endif
-                    if showPassword { JellyfinForm() }
-                }
-                if let error { Text(error).foregroundStyle(.red) }
-                Button("Use a different server") { Task { await model.clearServer() } }
-                    .font(.callout)
-                    #if os(iOS)
-                    .buttonStyle(.borderless)
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: Metrics.spacing * 2.4) {
+                    VStack(spacing: 8) {
+                        Text(model.appTheme.uppercase ? model.brand.uppercased() : model.brand)
+                            .font(model.appTheme.font(logoSize)).foregroundStyle(model.appTheme.brandColor)
+                        Text(model.server?.host() ?? "").font(.footnote.monospaced()).foregroundStyle(.secondary)
+                    }
+                    #if os(tvOS)
+                    TVCodeView()
+                    if options?.jellyfin == true {
+                        Button(showPassword ? "Hide" : "Sign in with a Jellyfin username and password") { showPassword.toggle() }
+                        if showPassword { JellyfinForm() }
+                    }
+                    #else
+                    VStack(spacing: 12) {
+                        Text("Sign in to request and watch").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
+                        PhoneSignIn(options: options)
+                        if options?.jellyfin == true {
+                            SignInButton(title: "Sign in with Jellyfin", icon: "server.rack", tint: Color(hex: 0xAA5CC3)) {
+                                withAnimation { showPassword.toggle() }
+                            }
+                            if showPassword { JellyfinForm().transition(.opacity.combined(with: .move(edge: .top))) }
+                        }
+                    }
+                    .frame(maxWidth: 420)
                     #endif
+                    if let error { Text(error).foregroundStyle(.red).multilineTextAlignment(.center) }
+                    Button("Use a different server") { Task { await model.clearServer() } }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        #if os(iOS)
+                        .buttonStyle(.borderless)
+                        #endif
+                }
+                .padding(Metrics.gutter * 1.5)
+                .frame(maxWidth: .infinity, minHeight: geo.size.height)  // centred when it fits, scrolls when it doesn't
             }
-            .padding(Metrics.gutter)
-            .frame(maxWidth: .infinity)
         }
-        .background(ServiceTheme.nuniflix.backgroundView)
+        .background(model.appTheme.backgroundView)
         .task {
-            do { options = try await API.shared.get("/auth/options") } catch { self.error = error.localizedDescription }
+            do { options = try await API.shared.get("/auth/options") }
+            catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
         }
     }
+
+    private var logoSize: CGFloat {
+        #if os(tvOS)
+        return 96
+        #else
+        return 52
+        #endif
+    }
 }
+
+#if os(iOS)
+/// One look for every sign-in option: full width, same height, the service's colour.
+struct SignInButton: View {
+    var title: String
+    var icon: String
+    var tint: Color
+    var text: Color = .white
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.body.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .foregroundStyle(text)
+                .background(tint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+#endif
 
 #if os(tvOS)
 struct TVCodeView: View {
@@ -174,33 +222,33 @@ struct PhoneSignIn: View {
     @State private var waiting: String?
     @State private var error: String?
     @State private var poll: Task<Void, Never>?
+    @State private var web = WebSignIn()
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             if options?.plex == true {
-                Button { start("plex") } label: { Label("Sign in with Plex", systemImage: "play.rectangle.fill").frame(maxWidth: 320) }
-                    .buttonStyle(.borderedProminent).tint(Color(hex: 0xE5A00D)).foregroundStyle(.black)
+                SignInButton(title: "Sign in with Plex", icon: "play.rectangle.fill", tint: Color(hex: 0xE5A00D), text: .black) { start("plex") }
             }
             if options?.discord == true {
-                Button { start("discord") } label: { Label("Sign in with Discord", systemImage: "bubble.left.and.bubble.right.fill").frame(maxWidth: 320) }
-                    .buttonStyle(.borderedProminent).tint(Color(hex: 0x5865F2))
+                SignInButton(title: "Sign in with Discord", icon: "bubble.left.and.bubble.right.fill", tint: Color(hex: 0x5865F2)) { start("discord") }
             }
             if options?.fluxer == true {
-                Button { start("fluxer") } label: { Label("Sign in with Fluxer", systemImage: "bubble.left.fill").frame(maxWidth: 320) }
-                    .buttonStyle(.borderedProminent).tint(Color(hex: 0x4641D9))
+                SignInButton(title: "Sign in with Fluxer", icon: "bubble.left.fill", tint: Color(hex: 0x4641D9)) { start("fluxer") }
             }
             if let waiting {
-                HStack { ProgressView(); Text("Finish signing in with \(waiting), then come back here.") }
+                HStack { ProgressView(); Text("Signing in with \(waiting)…") }
                     .font(.callout).foregroundStyle(.secondary)
             }
             if let error { Text(error).foregroundStyle(.red).multilineTextAlignment(.center) }
         }
-        .controlSize(.large)
-        .onDisappear { poll?.cancel() }
+        .onDisappear { poll?.cancel(); web.close() }
     }
 
+    /// Plex / Discord / Fluxer open in Apple's sign-in sheet on top of the app (not off in Safari), so the app stays
+    /// awake to see the sign-in finish, then closes the sheet itself. Closing the sheet early stops waiting.
     private func start(_ kind: String) {
         poll?.cancel()
+        web.close()
         error = nil
         poll = Task {
             do {
@@ -208,19 +256,58 @@ struct PhoneSignIn: View {
                 let s: StartURL = try API.shared.decode(data)
                 guard let u = URL(string: s.url) else { return }
                 waiting = ["plex": "Plex", "discord": "Discord", "fluxer": "Fluxer"][kind] ?? kind
-                openURL(u)
+                web.open(u) { poll?.cancel(); waiting = nil }
                 let until = Date().addingTimeInterval(600)
                 while Date() < until && !Task.isCancelled {
-                    try await Task.sleep(for: .seconds(2))
-                    let (d, status) = try await API.shared.post("/auth/\(kind)/check", ["state": s.state, "device": AppModel.deviceName])
-                    if status == 200 { try model.didSignIn(d); return }
+                    try await Task.sleep(for: .seconds(1.5))
+                    do {
+                        let (d, status) = try await API.shared.post("/auth/\(kind)/check", ["state": s.state, "device": AppModel.deviceName])
+                        if status == 200 { web.close(); try model.didSignIn(d); return }
+                    } catch let e as APIError where e.status == 0 {
+                        continue  // a blip on the network: keep waiting rather than calling the whole thing off
+                    }
                 }
+                web.close()
                 waiting = nil
             } catch is CancellationError {
             } catch {
+                web.close()
                 waiting = nil
                 self.error = error.localizedDescription
             }
+        }
+    }
+}
+
+/// Apple's in-app sign-in sheet. NuniFlix finds out the sign-in finished by asking its server, not from a redirect,
+/// so the callback scheme is never actually used; it's just what the sheet requires.
+@MainActor
+final class WebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private var session: ASWebAuthenticationSession?
+
+    func open(_ url: URL, onClosed: @escaping @MainActor () -> Void) {
+        let s = ASWebAuthenticationSession(url: url, callbackURLScheme: "nuniflix") { [weak self] _, _ in
+            Task { @MainActor in
+                guard self?.session != nil else { return }  // we closed it ourselves (signed in): nothing to undo
+                self?.session = nil
+                onClosed()
+            }
+        }
+        s.presentationContextProvider = self
+        s.prefersEphemeralWebBrowserSession = false  // remember the Plex/Discord login for next time
+        session = s
+        s.start()
+    }
+
+    func close() {
+        let s = session
+        session = nil
+        s?.cancel()
+    }
+
+    nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        MainActor.assumeIsolated {
+            UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first ?? ASPresentationAnchor()
         }
     }
 }
@@ -255,7 +342,10 @@ struct JellyfinForm: View {
                         try model.didSignIn(d)
                     } catch { self.error = error.localizedDescription }
                 }
-            } label: { if busy { ProgressView() } else { Text("Sign in").frame(minWidth: 160) } }
+            } label: {
+                Group { if busy { ProgressView() } else { Text("Sign in").font(.body.weight(.semibold)) } }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
             .disabled(user.isEmpty || busy)
             #if os(iOS)
             .buttonStyle(.borderedProminent).tint(Color(hex: 0xAA5CC3))
