@@ -206,6 +206,7 @@ enum Route: Hashable {
     case libraryAll(String, [String: String])          // everything in it (grid): title + query (type/genre)
     case yourflix
     case seasonal
+    case office
 }
 
 struct ErrorView: View {

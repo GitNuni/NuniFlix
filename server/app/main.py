@@ -1769,7 +1769,8 @@ def get_office(demo: bool = False, user=Depends(current_user)):
 
 
 @app.get("/api/office/art/{aid}", include_in_schema=False)
-def office_art(aid: str = Path(pattern=r"^[\w-]{6,20}$"), user=Depends(current_user)):
+def office_art(aid: str = Path(pattern=r"^[\w-]{6,20}$")):
+    """No sign-in (the Apple TV loads images without one): ids are random and only handed to people allowed to see them."""
     try:
         hit = office.art(aid)
     except httpx.HTTPError:

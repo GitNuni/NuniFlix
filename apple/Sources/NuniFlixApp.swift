@@ -71,12 +71,16 @@ struct MainView: View {
                     case .section(let p, let title, let type, let cat): SectionPage(provider: p, title: title, type: type, cat: cat)
                     case .yourflix: YourFlixView()
                     case .seasonal: SeasonalPage()
+                    case .office: OfficeView()
                     case .library(let genre): LibraryPage(genre: genre)
                     case .libraryAll(let title, let q): BrowseGridView(provider: nil, title: title, query: q)
                     }
                 }
         }
         .task { await model.loadMe() }
+        #if DEBUG
+        .onAppear { if ProcessInfo.processInfo.environment["NF_ROUTE"] == "office" { path.append(Route.office) } }  // simulator previews only
+        #endif
         .onOpenURL { url in  // nuniflix://item/movie/603 (Top Shelf)
             let parts = url.pathComponents.filter { $0 != "/" }
             guard url.host() == "item", parts.count == 2, let id = Int(parts[1]) else { return }

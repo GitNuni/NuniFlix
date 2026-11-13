@@ -35,6 +35,7 @@ struct ServicesView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing)], spacing: Metrics.spacing) {
                     NavigationLink(value: Route.yourflix) { YourFlixTile() }.cardButton()
                     NavigationLink(value: Route.seasonal) { SeasonalTile() }.cardButton()
+                    NavigationLink(value: Route.office) { OfficeTile(brand: model.brand) }.cardButton()
                     ForEach(providers) { p in
                         NavigationLink(value: Route.service(p)) { ServiceTile(provider: p) }.cardButton()
                     }
@@ -106,6 +107,29 @@ struct YourFlixTile: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 16)
+        }
+        .frame(width: Metrics.serviceTile.width, height: Metrics.serviceTile.height)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// The Office: NuniFlix HQ, live.
+struct OfficeTile: View {
+    var brand: String
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(colors: [Color(hex: 0x0B0820), Color(hex: 0x2A1E52)], startPoint: .top, endPoint: .bottom)
+            Picture(url: "/office/rooms/cinema.png").opacity(0.55)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 0) {
+                    Text(brand.replacingOccurrences(of: "Flix", with: "")).foregroundStyle(.white)
+                    Text("FLIX").foregroundStyle(Color(hex: 0xFF5468))
+                    Text(" HQ").foregroundStyle(.white)
+                }
+                .font(.system(size: 26, weight: .black, design: .monospaced)).shadow(color: Color(hex: 0xFF2240), radius: 8)
+                Text("Live: who's watching, what's arriving").font(.caption).foregroundStyle(.white.opacity(0.8))
+            }
+            .padding(14)
         }
         .frame(width: Metrics.serviceTile.width, height: Metrics.serviceTile.height)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
