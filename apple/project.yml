@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "22"
+    CURRENT_PROJECT_VERSION: "23"
     DEVELOPMENT_TEAM: 4BFLU9C935   # nunitech Apple Developer team
     CODE_SIGN_STYLE: Automatic
 targets:
@@ -79,6 +79,7 @@ targets:
       path: Info-TopShelf.plist
       properties:
         CFBundleDisplayName: NuniFlix Top Shelf
+        UIRequiredDeviceCapabilities: [arm64]   # App Store Connect insists on it for extensions
         NSExtension:
           NSExtensionPointIdentifier: com.apple.tv-top-shelf
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ContentProvider
