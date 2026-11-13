@@ -178,7 +178,9 @@ def shape(results, kind=None, resolve=True):
     return out
 
 
-def discover(provider, kind="movie", sort="popular", page=1, cat=None, resolve=True):
+def discover(provider, kind="movie", sort="popular", page=1, cat=None, resolve=True, extra=None):
+    """One page of what a service carries. extra: discover params to use instead of looking `cat` up in GENRES
+    (the mixed genres pass their own; `cat` then only keeps the cache key apart)."""
     reg, today = region(), datetime.date.today().isoformat()
     date = "primary_release_date" if kind == "movie" else "first_air_date"
     params = {"with_watch_providers": provider, "watch_region": reg, "with_watch_monetization_types": "flatrate",
@@ -187,6 +189,8 @@ def discover(provider, kind="movie", sort="popular", page=1, cat=None, resolve=T
         if kind != "tv" or provider not in ORIGINALS:
             raise TmdbError("No originals for that.")
         params = {"with_networks": ORIGINALS[provider], "include_adult": "false", "page": page, "sort_by": "popularity.desc"}
+    elif extra is not None:
+        params.update(extra)
     elif cat:
         extra = next((g[2] for g in GENRES[kind] if g[0] == cat), None)
         if extra is None:
@@ -205,6 +209,69 @@ def discover(provider, kind="movie", sort="popular", page=1, cat=None, resolve=T
 
 
 _rows_pool = ThreadPoolExecutor(6)
+
+# Genres for the combined (movies + shows) service pages: (key, title, movie params | None, show params | None).
+# TMDB's show genres differ a little from its movie ones (no Horror or Thriller for shows, combined Sci-Fi & Fantasy).
+MIXED_GENRES = [
+    ("action", "Action & Adventure", {"with_genres": "28"}, {"with_genres": "10759"}),
+    ("comedy", "Comedy", {"with_genres": "35"}, {"with_genres": "35"}),
+    ("drama", "Drama", {"with_genres": "18"}, {"with_genres": "18"}),
+    ("scifi", "Sci-Fi & Fantasy", {"with_genres": "878|14"}, {"with_genres": "10765"}),
+    ("crime", "Crime", {"with_genres": "80"}, {"with_genres": "80"}),
+    ("thriller", "Thrillers", {"with_genres": "53"}, None),
+    ("horror", "Horror", {"with_genres": "27"}, None),
+    ("mystery", "Mystery", {"with_genres": "9648"}, {"with_genres": "9648"}),
+    ("romance", "Romance", {"with_genres": "10749"}, None),
+    ("animation", "Animation", {"with_genres": "16"}, {"with_genres": "16"}),
+    ("anime", "Anime", {"with_genres": "16", "with_original_language": "ja"}, {"with_genres": "16", "with_original_language": "ja"}),
+    ("family", "Family", {"with_genres": "10751"}, {"with_genres": "10751"}),
+    ("kids", "Kids", None, {"with_genres": "10762"}),
+    ("docs", "Documentaries", {"with_genres": "99"}, {"with_genres": "99"}),
+    ("reality", "Reality", None, {"with_genres": "10764"}),
+]
+
+
+def _interleave(a, b):
+    out = []
+    for i in range(max(len(a), len(b))):
+        out += a[i:i + 1] + b[i:i + 1]
+    return out
+
+
+def discover_all(provider, sort="popular", page=1, cat=None, resolve=False):
+    """Movies and shows together, alternating, like the service's own home screen. cat: a MIXED_GENRES key."""
+    g = next((x for x in MIXED_GENRES if x[0] == cat), None) if cat else None
+    if cat and not g:
+        raise TmdbError("Unknown category.")
+    parts = []
+    for kind, extra in (("movie", g[2] if g else None), ("tv", g[3] if g else None)):
+        if g and extra is None:  # e.g. Horror: TMDB has no show genre for it
+            parts.append({"results": [], "page": page, "total_pages": 0})
+        else:  # one after the other, not in _rows_pool: rows_all() already runs in it, and waiting on it from inside could deadlock
+            parts.append(discover(provider, kind, sort, page, f"mix-{cat}" if cat else None, resolve, extra))
+    return {"results": _interleave(parts[0]["results"], parts[1]["results"]), "page": page,
+            "total_pages": max(p["total_pages"] for p in parts)}
+
+
+def rows_all(provider, name=""):
+    """A service's home screen with movies and shows together: mixed rows, then Movies and Shows rows, then genres."""
+    spec = [("popular", f"Popular on {name}".strip() if name else "Popular", "all", "popular", None)]
+    if provider in ORIGINALS:
+        spec.append(("originals", f"{name} Originals".strip(), "tv", "popular", "originals"))
+    spec += [("new", "New releases", "all", "new", None), ("top", "Top rated", "all", "top", None),
+             ("movies", "Movies", "movie", "popular", None), ("shows", "Shows", "tv", "popular", None)]
+
+    def one(row):
+        key, title, kind, sort, cat = row
+        try:
+            items = (discover_all(provider, sort, 1, cat) if kind == "all" else discover(provider, kind, sort, 1, cat, resolve=False))["results"]
+        except TmdbError:
+            items = []
+        return {"key": key, "title": title, "type": kind, "sort": sort, "cat": cat, "items": items}
+    out = [r for r in _rows_pool.map(one, spec) if len(r["items"]) >= 6]
+    pick = sorted(out[:2], key=lambda r: r["key"] != "originals")
+    hero = next((x for r in pick for x in r["items"] if x.get("backdrop") and x.get("overview")), None)
+    return {"hero": hero, "rows": out, "genres": [{"key": k, "title": t} for k, t, _, _ in MIXED_GENRES]}
 
 
 def rows(provider, kind, name=""):

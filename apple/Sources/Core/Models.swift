@@ -91,15 +91,22 @@ struct Item: Decodable, Hashable, Identifiable {
 struct Row: Decodable, Identifiable {
     var key: String
     var title: String
+    var type: String?   // "movie" / "tv" / "all" (movies and shows together)
     var sort: String
     var cat: String?
     var items: [Item]
     var id: String { key }
 }
 
+struct GenreRef: Decodable, Hashable {
+    var key: String
+    var title: String
+}
+
 struct RowsPage: Decodable {
     var hero: Item?
     var rows: [Row]
+    var genres: [GenreRef]?
 }
 
 struct DiscoverPage: Decodable {

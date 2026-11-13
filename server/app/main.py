@@ -837,10 +837,11 @@ def browse_providers(user=Depends(current_user)):
 
 
 @app.get("/api/browse/provider/{pid}")
-def browse_provider(pid: str = Path(pattern=r"^\d+(\|\d+){0,4}$"), type: Literal["movie", "tv"] = "movie", sort: Literal["popular", "new", "top"] = "popular",
+def browse_provider(pid: str = Path(pattern=r"^\d+(\|\d+){0,4}$"), type: Literal["movie", "tv", "all"] = "movie", sort: Literal["popular", "new", "top"] = "popular",
                     page: int = 1, cat: Optional[str] = Query(None, pattern=r"^[a-z]{2,20}$"), quick: bool = False,
                     user=Depends(current_user)):
-    d = tmdb.discover(pid, type, sort, max(1, min(page, 500)), cat, resolve=not quick)
+    page = max(1, min(page, 500))
+    d = tmdb.discover_all(pid, sort, page, cat, resolve=not quick) if type == "all" else tmdb.discover(pid, type, sort, page, cat, resolve=not quick)
     _overlay_requests(d["results"])
     prov = next((p for p in tmdb.providers() if p["id"] == pid), None)
     return d | {"provider": prov}
@@ -856,9 +857,11 @@ def browse_search(q: str, pid: str = Path(pattern=r"^\d+(\|\d+){0,4}$"), type: O
 
 
 @app.get("/api/browse/provider/{pid}/rows")
-def browse_rows(pid: str = Path(pattern=r"^\d+(\|\d+){0,4}$"), type: Literal["movie", "tv"] = "tv", user=Depends(current_user)):
+def browse_rows(pid: str = Path(pattern=r"^\d+(\|\d+){0,4}$"), type: Literal["movie", "tv", "all"] = "tv", user=Depends(current_user)):
+    """A service's home screen. type=all: movies and shows together, plus its genres (the Apple TV app)."""
     prov = next((p for p in tmdb.providers() if p["id"] == pid), None)
-    d = tmdb.rows(pid, type, (prov or {}).get("name", ""))
+    name = (prov or {}).get("name", "")
+    d = tmdb.rows_all(pid, name) if type == "all" else tmdb.rows(pid, type, name)
     for r in d["rows"]:
         _overlay_requests(r["items"])
     return d | {"provider": prov}

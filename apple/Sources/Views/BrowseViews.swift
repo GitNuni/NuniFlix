@@ -87,53 +87,48 @@ struct ServiceTile: View {
     }
 }
 
-/// One service's home screen, in its colours: a big featured title, then rows. Shows / Movies at the top.
+/// One service's home screen, in its colours, like the service's own app: a big featured title, rows of movies and
+/// shows together, a Movies row and a Shows row, then its genres.
 struct ServiceHomeView: View {
     @EnvironmentObject var model: AppModel
     var provider: Provider
-    @State private var kind = "tv"
     @State private var page: RowsPage?
     @State private var error: String?
-    @State private var loading = false
-    @FocusState private var pickerFocused: Bool
+    @FocusState private var topFocused: Bool
 
     var theme: ServiceTheme { ServiceTheme.of(provider.name) }
 
     var body: some View {
         ScrollViewReader { proxy in
-        ScrollView {
-            // iOS: the Shows / Movies bar stays pinned at the top while you scroll.
-            // tvOS: the Back/Menu button jumps up to it (see onExitCommand below), and it's its own focus section,
-            // so swiping up from the first row always lands on it.
-            LazyVStack(alignment: .leading, spacing: Metrics.spacing, pinnedViews: pinned) {
-              Section {
-                if let error {
-                    ErrorView(message: error) { Task { await load() } }
-                } else if let page {
-                    if let hero = page.hero { Hero(item: hero, theme: theme) }
-                    ForEach(page.rows) { row in
-                        ItemRow(title: row.title, theme: theme, items: row.items, more: { n in await more(row, n) })
-                            .id("\(kind):\(row.key)")
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Metrics.spacing) {
+                    header.id("top")
+                    if let error {
+                        ErrorView(message: error) { Task { await load() } }
+                    } else if let page {
+                        if let hero = page.hero { Hero(item: hero, theme: theme) }
+                        ForEach(page.rows) { row in
+                            ItemRow(title: row.title, theme: theme, items: row.items, more: { n in await more(row, n) })
+                        }
+                        if let genres = page.genres, !genres.isEmpty {
+                            GenreGrid(provider: provider, genres: genres, theme: theme)
+                        }
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity, minHeight: 400)
                     }
-                } else {
-                    ProgressView().frame(maxWidth: .infinity, minHeight: 400)
                 }
-              } header: {
-                header.id("top")
-              }
+                .padding(.bottom, Metrics.spacing * 2)
             }
-            .padding(.bottom, Metrics.spacing * 2)
-        }
-        #if os(tvOS)
-        // Back while browsing the rows: go up to Shows / Movies. Back again (already up there): leave, as usual.
-        .onExitCommand(perform: pickerFocused ? nil : {
-            withAnimation { proxy.scrollTo("top", anchor: .top) }
-            pickerFocused = true
-        })
-        #endif
+            #if os(tvOS)
+            // Back while down in the rows: jump to the top. Back again (already up there): leave, as usual.
+            .onExitCommand(perform: topFocused ? nil : {
+                withAnimation { proxy.scrollTo("top", anchor: .top) }
+                topFocused = true
+            })
+            #endif
         }
         .background(theme.backgroundView)
-        .task(id: kind) { await load() }
+        .task { if page == nil { await load() } }
         .onAppear { model.theme = theme }
         #if os(iOS)
         .navigationTitle(provider.name)
@@ -149,34 +144,17 @@ struct ServiceHomeView: View {
             #if os(tvOS)
             Text(provider.name).font(.title2.weight(.heavy))
             #endif
-            Picker("Show", selection: $kind) {
-                Text("Shows").tag("tv")
-                Text("Movies").tag("movie")
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 420)
-            .focused($pickerFocused)
             Spacer()
             NavigationLink(value: Route.search(provider)) { Label("Search", systemImage: "magnifyingglass") }
+                .focused($topFocused)
                 #if os(iOS)
                 .labelStyle(.iconOnly)
                 #endif
         }
         .padding(.horizontal, Metrics.gutter)
         .padding(.top, Metrics.spacing / 2)
-        #if os(iOS)
-        .padding(.bottom, Metrics.spacing / 2)
-        .background(theme.background[0])  // pinned: rows scroll underneath it
-        #else
+        #if os(tvOS)
         .focusSection()
-        #endif
-    }
-
-    private var pinned: PinnedScrollableViews {
-        #if os(iOS)
-        return .sectionHeaders
-        #else
-        return []
         #endif
     }
 
@@ -189,17 +167,107 @@ struct ServiceHomeView: View {
     }
 
     private func load() async {
-        page = nil; error = nil
-        do { page = try await API.shared.get("/browse/provider/\(provider.id)/rows", ["type": kind]) }
+        error = nil
+        do { page = try await API.shared.get("/browse/provider/\(provider.id)/rows", ["type": "all"]) }
         catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
     }
 
     private func more(_ row: Row, _ n: Int) async -> [Item] {
-        var q = ["type": kind, "sort": row.sort, "page": String(n), "quick": "true"]
+        var q = ["type": row.type ?? "all", "sort": row.sort, "page": String(n), "quick": "true"]
         if let c = row.cat { q["cat"] = c }
         let d: DiscoverPage? = try? await API.shared.get("/browse/provider/\(provider.id)", q)
         guard let d, d.page <= d.totalPages else { return [] }
         return d.results
+    }
+}
+
+/// A service's genres as big tiles; each opens that genre's movies and shows on the service.
+struct GenreGrid: View {
+    var provider: Provider
+    var genres: [GenreRef]
+    var theme: ServiceTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Metrics.spacing / 2) {
+            theme.heading("Genres").padding(.horizontal, Metrics.gutter)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing / 2)],
+                      spacing: Metrics.spacing / 2) {
+                ForEach(Array(genres.enumerated()), id: \.element.key) { i, g in
+                    NavigationLink(value: Route.genre(provider, g)) {
+                        ZStack(alignment: .bottomLeading) {
+                            LinearGradient(colors: [theme.accent.opacity(0.95), theme.accent.opacity(0.35)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                                .hueRotation(.degrees(Double(i) * 23))
+                            Text(theme.uppercase ? g.title.uppercased() : g.title)
+                                .font(theme.font(Metrics.rowTitleSize * 0.9, .bold))
+                                .foregroundStyle(.white).shadow(radius: 3)
+                                .padding(Metrics.spacing / 2)
+                        }
+                        .frame(height: Metrics.serviceTile.height)
+                        .clipShape(RoundedRectangle(cornerRadius: max(theme.corner, 8), style: .continuous))
+                    }
+                    .cardButton()
+                }
+            }
+            .padding(.horizontal, Metrics.gutter)
+        }
+        .padding(.top, Metrics.spacing / 2)
+    }
+}
+
+/// One genre on one service: movies and shows together, more as you scroll.
+struct GenreView: View {
+    @EnvironmentObject var model: AppModel
+    var provider: Provider
+    var genre: GenreRef
+    @State private var items: [Item] = []
+    @State private var page = 0
+    @State private var total = 1
+    @State private var loading = false
+    @State private var error: String?
+
+    var theme: ServiceTheme { ServiceTheme.of(provider.name) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Metrics.spacing) {
+                #if os(tvOS)
+                Text("\(genre.title) on \(provider.name)").font(theme.font(Metrics.rowTitleSize * 1.4, .heavy))
+                    .padding(.horizontal, Metrics.gutter)
+                #endif
+                if let error { ErrorView(message: error) { Task { await next() } } }
+                ItemGrid(items: items, theme: theme)
+                if page < total {
+                    ProgressView().frame(maxWidth: .infinity).padding()
+                        .onAppear { Task { await next() } }
+                } else if items.isEmpty {
+                    Text("Nothing here right now.").foregroundStyle(.secondary).frame(maxWidth: .infinity).padding()
+                }
+            }
+            .padding(.vertical, Metrics.spacing)
+        }
+        .background(theme.backgroundView)
+        .onAppear { model.theme = theme }
+        #if os(iOS)
+        .navigationTitle(genre.title)
+        #endif
+    }
+
+    private func next() async {
+        guard !loading, page < total else { return }
+        loading = true
+        defer { loading = false }
+        do {
+            let d: DiscoverPage = try await API.shared.get("/browse/provider/\(provider.id)",
+                                                           ["type": "all", "cat": genre.key, "page": String(page + 1), "quick": "true"])
+            let seen = Set(items.map(\.id))
+            items += d.results.filter { !seen.contains($0.id) }
+            page = d.page
+            total = d.totalPages
+            error = nil
+        } catch {
+            if !(error is CancellationError) { self.error = error.localizedDescription }
+        }
     }
 }
 

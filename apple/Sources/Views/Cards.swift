@@ -121,8 +121,17 @@ struct ItemCard: View {
 struct ItemRow: View {
     var title: String
     var theme: ServiceTheme
-    @State var items: [Item]
+    var source: [Item]
     var more: ((Int) async -> [Item])? = nil
+    @State private var items: [Item]
+
+    init(title: String, theme: ServiceTheme, items: [Item], more: ((Int) async -> [Item])? = nil) {
+        self.title = title
+        self.theme = theme
+        self.source = items
+        self.more = more
+        _items = State(initialValue: items)
+    }
     @State private var page = 1
     @State private var done = false
     @State private var loading = false
@@ -144,6 +153,8 @@ struct ItemRow: View {
             }
             .scrollClipDisabled()
         }
+        // new titles from the parent (a reload): start over from them, so a row never keeps showing stale ones
+        .onChange(of: source.map(\.id)) { _, _ in items = source; page = 1; done = false }
     }
 
     private func loadMore() async {
@@ -179,6 +190,7 @@ enum Route: Hashable {
     case item(Item)
     case search(Provider?)
     case requests
+    case genre(Provider, GenreRef)
 }
 
 struct ErrorView: View {
