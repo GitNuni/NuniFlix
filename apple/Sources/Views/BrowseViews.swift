@@ -16,7 +16,6 @@ struct ServicesView: View {
                         .font(model.appTheme.font(titleSize)).foregroundStyle(model.appTheme.brandColor)
                     Spacer()
                     NavigationLink(value: Route.search(nil)) { Label("Search", systemImage: "magnifyingglass") }
-                    NavigationLink(value: Route.requests) { Label("My requests", systemImage: "tray.full") }
                     Button { settings = true } label: { Label("Settings", systemImage: "gearshape") }
                 }
                 #if os(iOS)
