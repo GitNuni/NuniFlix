@@ -39,12 +39,58 @@ def _access(user):
         if not row:
             continue
         token = row["token"] or (cfg["plex"].get("token") if src == "plex" and row["owner"] else None)
+        if not token and src == "plex":
+            token = plex_friend_token(row["id"])  # signed in before tokens were kept, or with Discord: ask Plex for it
         if token:
             return src, token, row["id"]
         stale = stale or store.SOURCES[src]
+    if stale == "Plex":
+        raise PlayError("Your Plex account doesn't seem to have access to this server's libraries. Ask the owner to share them with you in Plex.")
     if stale:
-        raise PlayError(f"Sign in to NuniFlix with {stale} once more (the website is fine) so the app can play things as you.")
+        raise PlayError(f"Sign out of {store.app_name()} and sign back in with {stale} once, so it can play things as you.")
     raise PlayError("Link your Plex or Jellyfin account (Settings → Accounts) to watch in the app.")
+
+
+# ---------- someone's own Plex token, without them signing in again ----------
+PLEX_COM = "https://plex.tv"
+
+
+def plex_friend_token(identity_id):
+    """The person's own access token for the owner's server, looked up with the owner's Plex account:
+    friends the server is shared with (plex.tv shared_servers), then Plex Home members (switching to them).
+    Saved like a sign-in token, so it's only looked up once. None if Plex doesn't know them."""
+    import xml.etree.ElementTree as ET
+    owner = store.config()["plex"].get("token")
+    uid = identity_id.split(":", 1)[1] if ":" in identity_id else ""
+    if not (owner and uid):
+        return None
+    try:
+        machine = arr.cached("plex:machine", 86400, lambda: _http.get(_plex_base() + "/identity").json()["MediaContainer"]["machineIdentifier"])
+        shared = arr.cached(f"plex:shared:{machine}", 300, lambda: _http.get(
+            f"{PLEX_COM}/api/servers/{machine}/shared_servers", headers={"X-Plex-Token": owner, "Accept": "application/xml"}).text)
+        for el in ET.fromstring(shared).iter("SharedServer"):
+            if el.get("userID") == uid and el.get("accessToken"):
+                return _keep(identity_id, el.get("accessToken"))
+        home = arr.cached("plex:home", 300, lambda: _http.get(
+            f"{PLEX_COM}/api/home/users", headers={"X-Plex-Token": owner, "Accept": "application/xml"}).text)
+        member = next((el for el in ET.fromstring(home).iter("User") if el.get("id") == uid), None)
+        if member is None:
+            return None
+        sw = _http.post(f"{PLEX_COM}/api/home/users/{uid}/switch", headers={"X-Plex-Token": owner, "Accept": "application/xml",
+                                                                          "X-Plex-Client-Identifier": accounts._client_id()})
+        if sw.status_code != 201 and sw.status_code != 200:
+            return None  # e.g. a Home member with a PIN
+        user_token = ET.fromstring(sw.text).get("authenticationToken") or ET.fromstring(sw.text).get("authToken")
+        res = _http.get(f"{accounts.PLEX_TV}/resources", headers=accounts._plex_headers(user_token)).json()
+        mine = next((r for r in res if r.get("clientIdentifier") == machine), None)
+        return _keep(identity_id, mine["accessToken"]) if mine and mine.get("accessToken") else None
+    except (httpx.HTTPError, ValueError, KeyError, ET.ParseError, TypeError):
+        return None
+
+
+def _keep(identity_id, token):
+    store.run("insert or replace into media_tokens values(?,?,?)", (identity_id, token, time.time()))
+    return token
 
 
 def _client_id(user, platform):
