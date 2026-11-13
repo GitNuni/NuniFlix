@@ -10,6 +10,18 @@ final class AppModel: ObservableObject {
     @Published var brand = "NuniFlix"
     /// The service being browsed: title pages opened from it keep its colours.
     @Published var theme = ServiceTheme.nuniflix
+    /// The person's theme for NuniFlix's own screens (home, title pages, requests). Remembered on the device too,
+    /// so the app opens in it before the server answers.
+    @Published var themeID = UserDefaults.standard.string(forKey: "theme") ?? "nuniflix" {
+        didSet { UserDefaults.standard.set(themeID, forKey: "theme") }
+    }
+    var appTheme: ServiceTheme { ServiceTheme.app(themeID) }
+
+    func setTheme(_ id: String) async {
+        themeID = id
+        theme = appTheme
+        _ = try? await API.shared.post("/me/prefs", ["theme": id])
+    }
 
     init() {
         if let s = UserDefaults.standard.string(forKey: "server"), let u = URL(string: s) { server = u }
@@ -50,6 +62,7 @@ final class AppModel: ObservableObject {
 
     func loadMe() async {
         me = try? await API.shared.get("/me")
+        if let t = me?.prefs?.theme { themeID = t }
         if let o: AuthOptions = try? await API.shared.get("/auth/options"), let n = o.name, !n.isEmpty {
             brand = n.hasSuffix("Flix") ? n : n + "Flix"
         }

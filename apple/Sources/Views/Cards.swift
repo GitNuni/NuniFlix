@@ -93,7 +93,7 @@ struct ItemRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Metrics.spacing / 3) {
-            Text(title).font(Metrics.rowTitle.weight(theme.rowFont)).foregroundStyle(.white)
+            theme.heading(title)
                 .padding(.horizontal, Metrics.gutter)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: Metrics.spacing / 2) {

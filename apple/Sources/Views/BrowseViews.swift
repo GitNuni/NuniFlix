@@ -12,7 +12,8 @@ struct ServicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Metrics.spacing) {
                 HStack {
-                    Text(model.brand).font(.system(size: titleSize, weight: .black)).foregroundStyle(Color(hex: 0xE50914))
+                    Text(model.appTheme.uppercase ? model.brand.uppercased() : model.brand)
+                        .font(model.appTheme.font(titleSize)).foregroundStyle(model.appTheme.brandColor)
                     Spacer()
                     NavigationLink(value: Route.search(nil)) { Label("Search", systemImage: "magnifyingglass") }
                     NavigationLink(value: Route.requests) { Label("My requests", systemImage: "tray.full") }
@@ -40,9 +41,9 @@ struct ServicesView: View {
             }
             .padding(Metrics.gutter)
         }
-        .background(ServiceTheme.nuniflix.backgroundView)
+        .background(model.appTheme.backgroundView)
         .task { if !loaded { await load() } }
-        .onAppear { model.theme = .nuniflix }
+        .onAppear { model.theme = model.appTheme }
         .sheet(isPresented: $settings) { SettingsView() }
         #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
@@ -258,12 +259,13 @@ struct Hero: View {
 /// Search: one service's catalogue, or everything (what Radarr/Sonarr can find).
 struct SearchView: View {
     var provider: Provider?
+    @EnvironmentObject var model: AppModel
     @State private var query = ""
     @State private var results: [Item] = []
     @State private var searching = false
     @State private var error: String?
 
-    var theme: ServiceTheme { provider.map { ServiceTheme.of($0.name) } ?? .nuniflix }
+    var theme: ServiceTheme { provider.map { ServiceTheme.of($0.name) } ?? model.appTheme }
 
     var body: some View {
         ScrollView {
@@ -281,6 +283,7 @@ struct SearchView: View {
         .searchable(text: $query, prompt: provider.map { "Search \($0.name)" } ?? "Search movies and shows")
         .navigationTitle(provider?.name ?? "Search")
         .task(id: query) { await search() }
+        .onAppear { model.theme = theme }
     }
 
     private func search() async {
@@ -301,6 +304,7 @@ struct SearchView: View {
 
 /// Your requests and where they're at.
 struct RequestsView: View {
+    @EnvironmentObject var model: AppModel
     @State private var requests: [MyRequest] = []
     @State private var error: String?
     @State private var loaded = false
@@ -326,6 +330,11 @@ struct RequestsView: View {
             }
         }
         .navigationTitle("My requests")
+        #if os(iOS)
+        .scrollContentBackground(.hidden)
+        #endif
+        .background(model.appTheme.backgroundView)
+        .onAppear { model.theme = model.appTheme }
         .task { await load() }
         .refreshable { await load() }
     }
@@ -369,6 +378,13 @@ struct SettingsView: View {
                 Section("Signed in") {
                     LabeledContent("Name", value: model.me?.name ?? "…")
                     LabeledContent("Server", value: model.server?.absoluteString ?? "")
+                }
+                Section {
+                    Picker("Theme", selection: Binding(get: { model.themeID }, set: { id in Task { await model.setTheme(id) } })) {
+                        ForEach(ServiceTheme.appThemes, id: \.id) { Text($0.name).tag($0.id) }
+                    }
+                } footer: {
+                    Text("For NuniFlix's own screens. Browsing a service keeps that service's look. Same theme as on the website.")
                 }
                 Section {
                     Button("Sign out", role: .destructive) { Task { await model.signOut(); dismiss() } }

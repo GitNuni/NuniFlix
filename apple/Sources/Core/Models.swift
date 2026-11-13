@@ -8,6 +8,11 @@ struct Me: Decodable {
     var owner: Bool
     var perms: Perms
     var has4k: Has4K
+    var prefs: Prefs?
+
+    struct Prefs: Decodable {
+        var theme: String?
+    }
 
     struct Perms: Decodable {
         var canMovie: Bool?

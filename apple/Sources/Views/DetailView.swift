@@ -96,7 +96,8 @@ struct DetailView: View {
                 if let logo = extras?.logo {
                     TitleLogo(url: logo).frame(maxWidth: Metrics.heroHeight * 0.75, maxHeight: Metrics.heroHeight * 0.22, alignment: .leading)
                 } else {
-                    Text(item.title ?? "").font(.system(size: Metrics.heroHeight * 0.075, weight: .heavy)).foregroundStyle(.white)
+                    Text(theme.uppercase ? (item.title ?? "").uppercased() : (item.title ?? ""))
+                        .font(theme.font(Metrics.heroHeight * 0.075, .heavy)).foregroundStyle(.white)
                 }
                 Text(facts).font(.callout.weight(.semibold)).foregroundStyle(.white.opacity(0.8))
                 if let o = item.overview {
@@ -179,7 +180,7 @@ struct DetailView: View {
     // MARK: rows under the top
     private func seasonStrip(_ seasons: [Season]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Seasons").font(Metrics.rowTitle.weight(theme.rowFont)).foregroundStyle(.white)
+            theme.heading("Seasons")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(seasons, id: \.n) { s in
@@ -199,7 +200,7 @@ struct DetailView: View {
 
     private func castRow(_ cast: [Extras.Cast]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Cast").font(Metrics.rowTitle.weight(theme.rowFont)).foregroundStyle(.white).padding(.horizontal, Metrics.gutter)
+            theme.heading("Cast").padding(.horizontal, Metrics.gutter)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: Metrics.spacing / 2) {
                     ForEach(cast) { c in
