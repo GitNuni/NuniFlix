@@ -173,6 +173,7 @@ h2 small{font-size:15px;font-weight:400;color:var(--text2)}
 .castm small{display:block;font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 a.chip,a.btn{color:inherit;text-decoration:none}
 a.btn.jf{color:#fff} a.btn.plexplay{color:#1f1f1f}
+.chiprow{display:flex;flex-wrap:wrap}
 .chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:99px;background:var(--fill);font-size:14px;font-weight:600;margin:0 6px 14px 0}
 .quota{font-size:13px;color:var(--text2);text-align:center;margin:8px 0 0}
 details.adm{background:var(--card);border-radius:var(--radius);margin-top:10px;overflow:hidden}
@@ -1082,6 +1083,18 @@ async function api(path, opts = {}) {
   if (r.status === 401 && !opts.quiet) { showLogin(); throw new Error("Sign in first."); }
   if (!r.ok && r.status !== 202) throw new Error(typeof data.detail === "string" ? data.detail : "Something went wrong.");
   return Object.assign(data, {_status: r.status});
+}
+
+/* Inside the iPhone app (WebAppView.swift) there's a native bridge: window.NF_APP says what it can do, and
+   messages go to window.webkit.messageHandlers.nuniflix. In a browser these quietly do nothing (or the web fallback). */
+const NATIVE = () => window.NF_APP && window.webkit?.messageHandlers?.nuniflix;
+const native = msg => { try { window.webkit.messageHandlers.nuniflix.postMessage(msg); } catch {} };
+function haptic(style = "light") { if (NATIVE()) native({action: "haptic", style}); }
+async function shareTitle(it) {
+  const url = `${location.origin}/?item=${it.type}:${it.id}`, title = it.title + (it.year ? ` (${it.year})` : "");
+  if (NATIVE()) return native({action: "share", title, url});
+  if (navigator.share) return navigator.share({title, url}).catch(() => {});
+  try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { toast(url); }
 }
 
 function toast(msg) {
@@ -3493,7 +3506,7 @@ function renderItem(it) {
           ${it.genres?.length ? `<div class="meta">${it.genres.map(esc).join(", ")}</div>` : ""}
           ${lab ? `<span class="tag ${({available: "green", partial: "green", processing: "blue", pending: "orange"})[lab[1]]}">${it.status === "partial" ? "Partly available" : lab[0]}</span>` : ""}</div></div>
       ${it.overview ? `<p class="overview">${esc(it.overview)}</p>` : `<div style="height:14px"></div>`}
-      <div id="trailerSlot"></div>
+      <div class="chiprow"><span id="trailerSlot"></span><button class="chip" id="shareBtn">↗ Share</button></div>
       ${streaming}
       <div class="watch" id="watchSlot"></div>
       ${action}
@@ -3562,7 +3575,7 @@ function renderItem(it) {
     const label = btn.textContent; btn.disabled = true; btn.textContent = "Requesting…";
     try {
       const r = await api("/requests", {body});
-      toast(r.request.status === "pending" ? W("pendToast") : W("okToast"));
+      toast(r.request.status === "pending" ? W("pendToast") : W("okToast")); haptic("success");
       ME = await api("/me").catch(() => ME);
       openItem(it.type, it.id); refreshBadge();
     } catch (e) { toast(e.message); btn.disabled = false; btn.textContent = label; if (isTV) sync(); }
@@ -3631,6 +3644,7 @@ function renderItem(it) {
       } catch (err) { toast(err.message); btn.disabled = false; }
     };
   });
+  $("#shareBtn")?.addEventListener("click", () => shareTitle(it));
   if (it.tmdb) loadExtras(it);
   if (["available", "partial"].includes(it.status)) loadWatch(it);
   const ab = sh.querySelector("[data-approve]");
@@ -3903,6 +3917,7 @@ function swAct(kind) {
   flyOut(kind);
   SW.items.shift();
   api("/swipe", {body: {type: x.type, tmdb: x.tmdb, action: kind}}).catch(() => {});
+  haptic(kind === "like" ? "medium" : "light");
   if (kind === "like") swRequest(x);
   setTimeout(swRender, 300);
   if (SW.items.length < 6) swFill().then(() => { if (!$(".sw-card")) swRender(); });
@@ -4077,6 +4092,7 @@ function gotMatch(m) {
   const pop = document.createElement("div");
   pop.className = "mt-pop";
   const have = m.status === "available";
+  haptic("success");
   pop.innerHTML = `<p class="wr-k">It's a match!</p>${m.poster ? `<img src="${esc(m.poster)}" alt="">` : ""}<h1>${esc(m.title)}</h1>
     <p class="muted">You and ${esc(MT.other)} both want to watch it.</p>
     <div class="mt-actions">${MT.who === "host" ? (have ? `<button class="btn" data-mt="play">▶ Play it</button>` : `<button class="btn" data-mt="req">${esc(W("request"))} it</button>`)
@@ -4093,7 +4109,7 @@ function gotMatch(m) {
         if (url) window.open(url, "_blank", "noopener"); else toast("Couldn't find it on Jellyfin or Plex.");
       } else {
         const r = await api("/requests", {body: {type: "movie", id: m.tmdb}});
-        toast(r.request.status === "pending" ? W("pendToast") : W("okToast"));
+        toast(r.request.status === "pending" ? W("pendToast") : W("okToast")); haptic("success");
       }
     } catch (err) { toast(err.message); }
     b.disabled = false;
@@ -4251,6 +4267,25 @@ async function pushSub() {
 }
 async function setupPushSwitch() {
   const sw = $("#fNotif [name=push]"), note = $("#pushNote");
+  if (NATIVE()) {  // the iPhone app: Apple's own notifications (server: apns.py)
+    const {configured} = await api("/push/apns").catch(() => ({configured: false}));
+    if (!configured) { sw.disabled = true; note.textContent = ME.owner ? "Add your Apple push key in Settings → System → iPhone app notifications first." : `The owner hasn't set up iPhone notifications for ${APP()} yet.`; return; }
+    sw.checked = !!window.NF_APP.pushOn && ME.prefs?.push !== false;
+    sw.onchange = () => {
+      sw.disabled = true;
+      window.nfPushDone = async (ok, msg) => {  // the app calls this once iOS has answered
+        sw.disabled = false;
+        if (!ok) { sw.checked = false; toast(msg || "Notifications are off for this app in iPhone Settings."); return; }
+        window.NF_APP.pushOn = sw.checked;
+        try {
+          await api("/me/prefs", {body: {push: sw.checked}});
+          if (sw.checked) { await api("/push/test", {method: "POST"}); toast("Turned on. A test notification is on its way."); }
+        } catch (e) { toast(e.message); }
+      };
+      native({action: sw.checked ? "pushOn" : "pushOff"});
+    };
+    return;
+  }
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !isSecureContext) {
     sw.disabled = true;
     note.textContent = !isSecureContext ? `Phone notifications need ${APP()} on a secure (https) address.`
@@ -4401,6 +4436,15 @@ async function paneSystem(el) {
     </form>
     <p class="foot">Used by Play here's <b>Find subtitles</b>. <b>Plex</b> or <b>Jellyfin</b>: they fetch from OpenSubtitles and add it to the title for everyone (Jellyfin needs its OpenSubtitles plugin). If a stream is from the other server, that server is used. <b>OpenSubtitles</b>: ${APP()} fetches them itself with your free key from opensubtitles.com; a username and password raise the daily download limit. Subtitles already on a title always show up.</p>
     <button class="btn small" id="subSave">Save subtitles</button>
+    <h2>iPhone app notifications</h2>
+    <form class="form" id="apnsForm">
+      <label><span>APNs key (.p8)</span><textarea name="key" rows="3" autocomplete="off" spellcheck="false" placeholder="${SETUP.cfg.apns?.key_set ? "Saved (leave blank to keep)" : "-----BEGIN PRIVATE KEY----- …"}"></textarea></label>
+      <label><span>Key ID</span><input name="key_id" maxlength="20" autocomplete="off" autocapitalize="characters" value="${esc(SETUP.cfg.apns?.key_id || "")}"></label>
+      <label><span>Team ID</span><input name="team_id" maxlength="20" autocomplete="off" autocapitalize="characters" value="${esc(SETUP.cfg.apns?.team_id || "")}"></label>
+      <label><span>App bundle ID</span><input name="topic" autocomplete="off" autocapitalize="off" value="${esc(SETUP.cfg.apns?.topic || "com.nunitech.nuniflix")}"></label>
+    </form>
+    <p class="foot">Lets the ${APP()} iPhone app get real notifications (approved, ready to watch…). On developer.apple.com → Certificates, IDs &amp; Profiles → <b>Keys</b> → +, tick <b>Apple Push Notifications service (APNs)</b>, download the .p8 file and paste its text here with the Key ID. Team ID is under Membership.</p>
+    <button class="btn small" id="apnsSave">Save notifications key</button>
     <h2>At a glance</h2>${STEPS.done.html().replace(/<h1>[\s\S]*?<\/p>/, "")}
     <h2>Connections</h2><div class="summary" id="health">${["jellyfin", "plex", "radarr", "sonarr", "radarr4k", "sonarr4k", "tmdb", "discord", "fluxer"]
       .filter(k => SETUP.cfg[k] && (SETUP.cfg[k].url || SETUP.cfg[k].key_set || SETUP.cfg[k].client_id))
@@ -4420,6 +4464,12 @@ async function paneSystem(el) {
   };
   const bi = $("#brandForm [name=brand]", el);
   bi.oninput = () => { $("#brandPrev").textContent = (bi.value.trim().replace(/flix$/i, "") || "Nuni") + "Flix"; };
+  $("#apnsSave").onclick = async () => {
+    const apns = Object.fromEntries([...new FormData($("#apnsForm")).entries()].map(([k, v]) => [k, String(v).trim()]));
+    try { const r = await api("/admin/settings", {body: {apns}}); SETUP.cfg = {...SETUP.cfg, ...r.config};
+      const t = r.tests?.apns; toast(t ? t.message : "Saved"); $("#apnsForm [name=key]").value = ""; }
+    catch (err) { toast(err.message); }
+  };
   $("#subForm [name=source]").onchange = e => { $("#subOS").hidden = e.target.value !== "opensubtitles"; };
   $("#subSave").onclick = async () => {
     const f = new FormData($("#subForm")), subtitles = Object.fromEntries([...f.entries()].map(([k, v]) => [k, String(v).trim()]));

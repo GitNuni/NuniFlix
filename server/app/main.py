@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 import random
 
-import accounts, arr, history, media, notify, office, player, store, subtitles, tmdb
+import accounts, apns, arr, history, media, notify, office, player, store, subtitles, tmdb
 
 VERSION = "0.4.0"
 COOKIE = "nf_token"
@@ -468,9 +468,34 @@ def push_unsubscribe(body: PushEnd, user=Depends(current_user)):
     return {"ok": True}
 
 
+class ApnsToken(BaseModel):
+    token: str = Field(pattern=r"^[0-9a-f]{64,200}$")
+
+
+@app.get("/api/push/apns")
+def apns_status(user=Depends(current_user)):
+    """Can the iPhone app get notifications here (has the owner added an APNs key)?"""
+    return {"configured": apns.configured()}
+
+
+@app.post("/api/push/apns")
+def apns_register(body: ApnsToken, user=Depends(current_user)):
+    """The iPhone app's device token, after the person allowed notifications."""
+    if not apns.configured():
+        raise HTTPException(400, "The owner hasn't set up iPhone notifications yet (Settings → System).")
+    store.run("insert or replace into apns_tokens values(?,?,?)", (body.token, user["id"], time.time()))
+    return {"ok": True}
+
+
+@app.post("/api/push/apns/remove")
+def apns_remove(body: ApnsToken, user=Depends(current_user)):
+    store.run("delete from apns_tokens where token=? and user_id=?", (body.token, user["id"]))
+    return {"ok": True}
+
+
 @app.post("/api/push/test")
 def push_test(user=Depends(current_user)):
-    if not store.q1("select 1 from push_subs where user_id=?", (user["id"],)):
+    if not store.q1("select 1 from push_subs where user_id=?", (user["id"],)) and not store.q1("select 1 from apns_tokens where user_id=?", (user["id"],)):
         raise HTTPException(400, "This device isn't signed up for notifications yet.")
     notify._pool.submit(notify.push, user["id"], store.app_name(), "Notifications are working.", "/")
     return {"ok": True}
@@ -1497,6 +1522,7 @@ class Settings(BaseModel):
     office_on: Optional[bool] = None
     office_names: Optional[bool] = None
     subtitles: Optional[dict] = None
+    apns: Optional[dict] = None
 
 
 EDITABLE = {"radarr": {"url", "key", "profile", "root", "availability"},
@@ -1508,7 +1534,8 @@ EDITABLE = {"radarr": {"url", "key", "profile", "root", "availability"},
             "sonarr4k": {"url", "key", "profile", "root", "season_folders"},
             "notify": {"webhooks", "dm", "push", "events"},
             "quotas": {"movie_limit", "movie_days", "tv_limit", "tv_days"},
-            "subtitles": {"source", "key", "username", "secret", "language"}}
+            "subtitles": {"source", "key", "username", "secret", "language"},
+            "apns": {"key", "key_id", "team_id", "topic"}}
 FLAGS = ("jellyfin_login", "plex_login", "discord_login", "fluxer_login", "fluxer_needs_link", "auto_approve", "auto_next", "swipe_on", "match_on", "discord_needs_link", "show_requester", "office_on", "office_names")
 
 
@@ -1583,6 +1610,8 @@ def save_settings(body: Settings, user=Depends(owner_user)):
     tests = {k: arr.test(k, c[k]["url"], c[k]["key"]) for k in ("radarr", "sonarr") if c[k]["url"] and c[k]["key"]}
     if c["tmdb"]["key"]:
         tests["tmdb"] = tmdb.test(c["tmdb"]["key"])
+    if body.apns:
+        tests["apns"] = apns.check()
     return {"config": store.public_config(c), "tests": {k: {"ok": ok, "message": m} for k, (ok, m) in tests.items()}}
 
 

@@ -3,6 +3,9 @@ import SwiftUI
 @main
 struct NuniFlixApp: App {
     @StateObject private var model = AppModel()
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate  // notifications (Native.swift)
+    #endif
 
     init() {
         // Posters and backdrops: keep plenty on disk so browsing back is instant.

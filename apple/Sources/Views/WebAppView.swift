@@ -1,4 +1,5 @@
 #if os(iOS)
+import Combine
 import SwiftUI
 import WebKit
 
@@ -63,6 +64,10 @@ private struct WebView: UIViewRepresentable {
         config.mediaTypesRequiringUserActionForPlayback = []   // the website's muted trailers play by themselves
         config.applicationNameForUserAgent = "NuniFlixApp/1.0 Mobile/15E148 Safari/604.1"
         config.websiteDataStore = .default()
+        // The bridge (website: NATIVE()/native()): haptics, the share sheet, iPhone notifications.
+        let flags = "window.NF_APP = {haptics: true, share: true, push: true, pushOn: \(Push.shared.isOn)};"
+        config.userContentController.addUserScript(WKUserScript(source: flags, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        config.userContentController.add(WeakHandler(context.coordinator), name: "nuniflix")
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = context.coordinator
         web.uiDelegate = context.coordinator
@@ -72,6 +77,7 @@ private struct WebView: UIViewRepresentable {
         web.scrollView.backgroundColor = .black
         web.scrollView.contentInsetAdjustmentBehavior = .never  // the website handles the notch and home bar itself
         context.coordinator.web = web
+        context.coordinator.watchNotifications()
         config.websiteDataStore.httpCookieStore.add(context.coordinator)
         context.coordinator.signInAndLoad()
         return web
@@ -92,6 +98,7 @@ private struct WebView: UIViewRepresentable {
         var loadedReload = 0
         private var cookieSet = false
         private weak var popup: UIViewController?
+        private var opening: AnyCancellable?
 
         init(_ parent: WebView) {
             self.parent = parent
@@ -113,6 +120,47 @@ private struct WebView: UIViewRepresentable {
                 guard let self else { return }
                 self.cookieSet = true
                 web.load(URLRequest(url: self.parent.server))
+            }
+        }
+
+        // MARK: the bridge (messages from the website)
+        func message(_ body: Any) {
+            guard let msg = body as? [String: Any], let action = msg["action"] as? String else { return }
+            switch action {
+            case "haptic":
+                Haptics.play(msg["style"] as? String ?? "light")
+            case "share":
+                guard let s = msg["url"] as? String, let url = URL(string: s) else { return }
+                let sheet = UIActivityViewController(activityItems: [msg["title"] as? String ?? "", url], applicationActivities: nil)
+                if let pop = sheet.popoverPresentationController, let web {  // iPad: point it at the middle of the screen
+                    pop.sourceView = web
+                    pop.sourceRect = CGRect(x: web.bounds.midX, y: web.bounds.midY, width: 1, height: 1)
+                }
+                topController()?.present(sheet, animated: true)
+            case "pushOn":
+                Task {
+                    do { try await Push.shared.turnOn(); answer(true, nil) }
+                    catch { answer(false, error.localizedDescription) }
+                }
+            case "pushOff":
+                Task { await Push.shared.turnOff(); answer(true, nil) }
+            default:
+                break
+            }
+        }
+
+        /// Tell the website's Notifications switch how it went.
+        private func answer(_ ok: Bool, _ text: String?) {
+            let msg = (text ?? "").replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            web?.evaluateJavaScript("window.nfPushDone && window.nfPushDone(\(ok), \"\(msg)\")")
+        }
+
+        /// A tapped notification: open its page.
+        func watchNotifications() {
+            opening = Push.shared.$openPath.compactMap { $0 }.receive(on: RunLoop.main).sink { [weak self] path in
+                guard let self, let web = self.web, let url = URL(string: path, relativeTo: self.parent.server) else { return }
+                Push.shared.openPath = nil
+                web.load(URLRequest(url: url.absoluteURL))
             }
         }
 
@@ -225,6 +273,15 @@ private struct WebView: UIViewRepresentable {
                 topController()?.present(a, animated: true)
             }
         }
+    }
+}
+/// WKUserContentController keeps its handlers alive; this keeps the page from keeping the coordinator alive forever.
+private final class WeakHandler: NSObject, WKScriptMessageHandler {
+    weak var target: WebView.Coordinator?
+    init(_ target: WebView.Coordinator) { self.target = target }
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        let body = message.body
+        MainActor.assumeIsolated { target?.message(body) }
     }
 }
 #endif

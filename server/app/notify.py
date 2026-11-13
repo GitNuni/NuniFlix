@@ -128,6 +128,8 @@ def vapid_public():
 
 
 def push(user_id, title, body, url="/"):
+    import apns
+    apns.send(user_id, title, body, url)  # the iPhone app
     from pywebpush import WebPushException, webpush
     vapid_public()
     for s in store.q("select * from push_subs where user_id=?", (user_id,)):

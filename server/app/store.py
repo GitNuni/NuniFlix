@@ -50,6 +50,8 @@ DEFAULTS = {
     # Subtitles for "Play here": where "Find subtitles" looks. plex / jellyfin: the media server fetches them from
     # OpenSubtitles itself; opensubtitles: NuniFlix asks OpenSubtitles.com with this API key (username/password optional,
     # for the account's bigger daily allowance). language: what to search for first.
+    # iPhone app notifications (apns.py): an APNs key from developer.apple.com → Keys. topic = the app's bundle id.
+    "apns": {"key": "", "key_id": "", "team_id": "", "topic": "com.nunitech.nuniflix"},
     "subtitles": {"source": "plex", "key": "", "username": "", "secret": "", "language": "en"},
     "site_url": "",  # NuniFlix's own address; Discord redirects and links in posts use it (blank = whatever address is in use)
     "setup_done": False,
@@ -98,6 +100,8 @@ create table if not exists match_votes(
   vote text not null, created real not null, primary key(code, who, tmdb));
 create table if not exists media_tokens(
   identity text primary key references identities(id) on delete cascade, token text not null, updated real not null);
+create table if not exists apns_tokens(
+  token text primary key, user_id text not null references users(id) on delete cascade, created real not null);
 create table if not exists push_subs(
   endpoint text primary key, user_id text not null references users(id) on delete cascade,
   p256dh text not null, auth text not null, created real not null);
@@ -344,7 +348,7 @@ def merge_users(src, dst):
     with tx():
         run("delete from swipes where user_id=? and exists(select 1 from swipes s where s.user_id=? and s.type=swipes.type and s.tmdb=swipes.tmdb)", (src, dst))
         run("delete from sessions where user_id=?", (src,))
-        for table in ("requests", "issues", "push_subs", "identities", "swipes"):
+        for table in ("requests", "issues", "push_subs", "apns_tokens", "identities", "swipes"):
             run(f"update {table} set user_id=? where user_id=?", (dst, src))
         run("update requests set decided_by=? where decided_by=?", (dst, src))
         run("insert or ignore into auto_next select ?, tvdb, season, created from auto_next where user_id=?", (dst, src))
