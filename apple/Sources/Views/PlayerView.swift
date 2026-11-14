@@ -27,7 +27,7 @@ struct PlayItem: Decodable, Identifiable, Hashable {
     }
 }
 
-private struct StreamStart: Decodable {
+struct StreamStart: Decodable {
     var url: String
     var session: String
 }
@@ -93,7 +93,7 @@ final class Playback: ObservableObject {
         #endif
     }
 
-    func start(from position: Double) async {
+    func start(from position: Double, stream pre: StreamStart? = nil) async {
         guard !starting, session == nil else { return }  // one stream at a time, even if the screen asks twice
         starting = true
         defer { starting = false }
@@ -102,11 +102,15 @@ final class Playback: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
         do {
-            var body: [String: Any] = ["id": current.id, "offset": 0, "platform": Self.platform]
-            if let subtitle { body["subtitle"] = subtitle }
-            if channelKey != nil { body["live"] = true }
-            let (data, _) = try await API.shared.post("/play/start", body)
-            let s: StreamStart = try API.shared.decode(data)
+            let s: StreamStart
+            if let pre { s = pre } else {
+                // at: the server marks the playlist to begin there (EXT-X-START), so it doesn't load 0:00 first
+                var body: [String: Any] = ["id": current.id, "offset": 0, "at": position, "platform": Self.platform]
+                if let subtitle { body["subtitle"] = subtitle }
+                if channelKey != nil { body["live"] = true }
+                let (data, _) = try await API.shared.post("/play/start", body)
+                s = try API.shared.decode(data)
+            }
             guard let base = API.shared.base, let url = URL(string: base.absoluteString + s.url) else {
                 throw APIError(status: 0, message: "Bad stream address.")
             }
@@ -118,9 +122,11 @@ final class Playback: ObservableObject {
             if position > 0 {
                 holdAt = position
                 defer { holdAt = nil }
-                // A seek before the stream is ready gets dropped and it plays from 0:00, so wait for it first.
+                // The playlist says where to begin; if it didn't take, jump there once it's ready (a seek before that is dropped).
                 await ready(playerItem)
-                await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 2, preferredTimescale: 1))
+                if abs(self.position - position) > 8 {
+                    await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 2, preferredTimescale: 1))
+                }
             }
             player.play()
         } catch is CancellationError {
@@ -197,24 +203,32 @@ final class Playback: ObservableObject {
     private var tuneTask = 0
 
     /// Join a channel part-way through whatever it's showing (or wait out the ident if the next show is about to start).
-    func tune(_ key: String) async {
+    /// shown: called once the channel is on screen (playing, or its ident while it waits for the next programme).
+    func tune(_ key: String, shown done: ((Bool) -> Void)? = nil) async {
+        var done = done
+        defer { done?(false) }
         tuneTask += 1
         let me = tuneTask
         channelKey = key
         staticBurst = true
         Task { try? await Task.sleep(for: .milliseconds(650)); if me == self.tuneTask { self.staticBurst = false } }
         watchBuffering()
-        await stopStream()
+        let old = session; session = nil
+        if let old { Task { _ = try? await API.shared.post("/play/progress", ["session": old, "position": 0, "state": "stopped"]) } }  // don't wait for it
         player.pause()
         subtitle = nil
         setCues([])
         let ch = channels.first { $0.key == key }
         let t: LiveTune
-        do { t = try await API.shared.get("/live/\(key)", ["tz": liveTZ]) } catch {
-            if !(error is CancellationError) { self.error = error.localizedDescription }
+        let asked = Date()
+        do { t = try await API.shared.get("/live/\(key)", ["tz": liveTZ, "platform": Self.platform]) } catch {
+            if !(error is CancellationError), player.currentItem == nil { self.error = error.localizedDescription }
             return
         }
-        guard me == tuneTask else { return }  // flipped again meanwhile
+        guard me == tuneTask else {  // flipped again meanwhile
+            if let s = t.stream { Task { _ = try? await API.shared.post("/play/progress", ["session": s.session, "position": 0, "state": "stopped"]) } }
+            return
+        }
         let p = t.program
         current = PlayItem(id: p.id, title: p.show.map { "\($0): \(p.title ?? "")" } ?? (p.title ?? ""), resume: 0, duration: p.end - p.start, watched: false)
         kind = p.kind; extID = p.ext ?? 0
@@ -223,13 +237,15 @@ final class Playback: ObservableObject {
             staticBurst = false
             bug = LiveBug(channel: ch, now: p, next: t.next, startsAt: Date(timeIntervalSinceNow: -t.offset), host: t.host,
                           name: t.channel?.name, tagline: t.channel?.tagline, takeover: t.channel?.takeover != nil)
+            done?(true); done = nil
             try? await Task.sleep(for: .seconds(-t.offset))
             guard me == tuneTask else { return }
         }
         let shown = LiveBug(channel: ch, now: p, next: t.next, startsAt: nil, host: t.host, name: t.channel?.name,
                             tagline: t.channel?.tagline, takeover: t.channel?.takeover != nil)
         bug = shown
-        await start(from: max(0, t.offset))
+        await start(from: max(0, t.offset + (t.stream == nil ? Date().timeIntervalSince(asked) : 0)), stream: t.stream)
+        done?(me == tuneTask); done = nil
         let stay = 7 + Double(t.host?.line.count ?? 0) * 0.045
         Task { try? await Task.sleep(for: .seconds(stay)); if self.bug == shown { self.bug = nil } }
     }
@@ -251,10 +267,22 @@ final class Playback: ObservableObject {
         }
     }
 
-    /// Channel up/down.
-    func flip(_ step: Int) async {
-        guard let channelKey, let i = channels.firstIndex(where: { $0.key == channelKey }), !channels.isEmpty else { return }
-        await tune(channels[(i + step + channels.count) % channels.count].key)
+    /// Channel up/down. The Siri Remote's channel flipping (AVPlayerViewController's delegate) and the clickpad both
+    /// land here; a press that arrives both ways only flips once.
+    private var lastFlip = Date.distantPast
+    private var lastFlipSource = ""
+    @discardableResult
+    func flip(_ step: Int, from source: String = "") async -> Bool {
+        if source != lastFlipSource, Date().timeIntervalSince(lastFlip) < 0.5 { return false }
+        lastFlip = Date(); lastFlipSource = source
+        guard let ch = peek(step) else { return false }
+        return await withCheckedContinuation { c in Task { await tune(ch.key) { c.resume(returning: $0) } } }
+    }
+
+    /// The channel `step` away from the one tuned to.
+    func peek(_ step: Int) -> LiveChannel? {
+        guard let channelKey, let i = channels.firstIndex(where: { $0.key == channelKey }), !channels.isEmpty else { return nil }
+        return channels[(i + step + channels.count) % channels.count]
     }
 
     // MARK: subtitles (server: subtitles.py)
@@ -459,6 +487,7 @@ private struct PlayerController: UIViewControllerRepresentable {
                 vc.view.addGestureRecognizer(g)
             }
             context.coordinator.playback = pb
+            vc.delegate = context.coordinator  // Siri Remote channel up/down while watching (skipToNextChannel)
         }
         vc.transportBarCustomMenuItems = menus
         #endif
@@ -478,11 +507,47 @@ private struct PlayerController: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
         var host: UIHostingController<CaptionView>?
         weak var playback: Playback?
-        @MainActor @objc func up() { Task { await playback?.flip(1) } }
-        @MainActor @objc func down() { Task { await playback?.flip(-1) } }
+        @MainActor @objc func up() { Task { await playback?.flip(1, from: "press") } }
+        @MainActor @objc func down() { Task { await playback?.flip(-1, from: "press") } }
+        #if os(tvOS)
+        func playerViewController(_ vc: AVPlayerViewController, skipToNextChannel completion: @escaping (Bool) -> Void) {
+            Task { @MainActor in completion(await playback?.flip(1, from: "channel") ?? false) }
+        }
+        func playerViewController(_ vc: AVPlayerViewController, skipToPreviousChannel completion: @escaping (Bool) -> Void) {
+            Task { @MainActor in completion(await playback?.flip(-1, from: "channel") ?? false) }
+        }
+        func nextChannelInterstitialViewController(for vc: AVPlayerViewController) -> UIViewController { card(1) }
+        func previousChannelInterstitialViewController(for vc: AVPlayerViewController) -> UIViewController { card(-1) }
+        /// Fills the screen while the next channel loads: static and its number and name.
+        private func card(_ step: Int) -> UIViewController {
+            MainActor.assumeIsolated {
+                let h = UIHostingController(rootView: ChannelCard(channel: playback?.peek(step)))
+                h.view.backgroundColor = .black
+                return h
+            }
+        }
+        #endif
+    }
+
+    /// Between channels: static, with the number and name of the channel coming up.
+    struct ChannelCard: View {
+        var channel: LiveChannel?
+        var body: some View {
+            ZStack {
+                StaticNoise().opacity(0.6)
+                if let channel {
+                    VStack(spacing: 12) {
+                        Text("\(channel.number)").font(.system(size: 140, weight: .black, design: .monospaced)).foregroundStyle(Color(hex: 0xFFD54A))
+                        Text(channel.name.uppercased()).font(.system(size: 50, weight: .black, design: .monospaced)).foregroundStyle(.white)
+                    }
+                    .shadow(color: .black, radius: 8)
+                }
+            }
+            .ignoresSafeArea()
+        }
     }
 }
 

@@ -210,14 +210,17 @@ JF_PROFILE_WEB = {**JF_PROFILE, "TranscodingProfiles": [
      "MaxAudioChannels": "2", "MinSegments": "1", "BreakOnNonKeyFrames": True}]}
 
 
-def start(user, item_id, offset, platform, subtitle=None, live=False):
+def start(user, item_id, offset, platform, subtitle=None, live=False, at=0):
     """Start a stream of one movie/episode. Returns {url, session}; url is relative to the NuniFlix server.
-    subtitle: a Plex/Jellyfin subtitle track to burn into the picture (0 = none, None = leave as it is)."""
+    subtitle: a Plex/Jellyfin subtitle track to burn into the picture (0 = none, None = leave as it is).
+    at: where the player should begin (resume point, or how far into a live programme). The playlists say so
+    (EXT-X-START), so the player asks for that part first instead of loading 0:00 and then jumping."""
     src, token, ident = _access(user)
     client = _client_id(user, platform)
     sid = secrets.token_urlsafe(32)
     s = {"sid": sid, "user": user["id"], "source": src, "token": token, "client": client, "platform": platform,
-         "item": item_id, "seen": time.time(), "started": False, "subtitle": subtitle, "live": live}
+         "item": item_id, "seen": time.time(), "started": False, "subtitle": subtitle, "live": live,
+         "at": max(0.0, float(at or 0))}
     try:
         if src == "plex":
             path, query = _plex_start(s, offset)
@@ -378,6 +381,8 @@ def fetch(sid, path, query, range_header=None):
         finally:
             r.close()
         text = re.sub(r"\?(?=\s|$)", "", TOKEN_PARAMS.sub(r"\1", text))  # their token must not reach the device
+        if s.get("at", 0) > 1 and "#EXT-X-START" not in text:  # begin at the resume / join point, not 0:00
+            text = text.replace("#EXTM3U", f"#EXTM3U\n#EXT-X-START:TIME-OFFSET={s['at']:.2f}", 1)
         keep.pop("content-length", None)
         keep["content-type"] = "application/vnd.apple.mpegurl"
         return r.status_code, keep, text.encode()

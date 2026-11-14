@@ -19,21 +19,35 @@ EPOCH = 1704704400  # Monday 8 Jan 2024 09:00 UTC: weeks turn over early morning
 PAD = 300           # programmes start on 5-minute marks
 MIN_ITEMS = 5
 
-# key, name, tagline, kind, genres (any of; Plex and Jellyfin name some differently), decade
+# key, name, tagline, kind, genres (any of; Plex and Jellyfin name some differently), when: decades [1980, ...] or "new"
 CHANNELS = [
     ("fright", "Fright Night", "Horror, all day and all night", "movie", ["Horror"], None),
+    ("fresh", "Just Added", "New to the library, straight to air", "movie", [], "new"),
     ("sitcom", "Sitcom Comfort", "Back-to-back episodes, no thinking required", "tv", ["Comedy"], None),
     ("action", "Blockbuster", "Explosions on the hour", "movie", ["Action", "Adventure"], None),
     ("laughs", "Laugh Track", "Comedies, start to finish", "movie", ["Comedy"], None),
     ("scifi", "Deep Space", "Science fiction and the unknown", "movie", ["Science Fiction", "Sci-Fi"], None),
     ("after", "After Dark", "Thrillers, crime and mysteries", "movie", ["Thriller", "Crime", "Mystery"], None),
+    ("drama", "Prime Time", "Drama series, one more episode", "tv", ["Drama"], None),
+    ("crime", "Case Files", "Detectives, cops and whodunits", "tv", ["Crime", "Mystery"], None),
     ("toons", "Saturday Morning", "Cartoons, any day of the week", "tv", ["Animation"], None),
+    ("kids", "Kids Club", "Shows for the little ones", "tv", ["Kids", "Children", "Family"], None),
     ("family", "Family Room", "Something for everyone on the couch", "movie", ["Family", "Animation"], None),
+    ("fantasy", "Once Upon a Time", "Dragons, wizards and faraway lands", "movie", ["Fantasy"], None),
     ("feels", "The Big Feels", "Dramas and love stories", "movie", ["Drama", "Romance"], None),
-    ("80s", "Rewind '80s", "Big hair, synths and practical effects", "movie", [], 1980),
-    ("90s", "Rewind '90s", "Be kind, rewind", "movie", [], 1990),
+    ("tvscifi", "Beam Me Up", "Sci-fi series, back to back", "tv", ["Science Fiction", "Sci-Fi & Fantasy", "Sci-Fi"], None),
+    ("anime", "Anime Block", "Anime, episode after episode", "tv", ["Anime"], None),
+    ("classics", "Golden Age", "They don't make them like this anymore", "movie", [], [1930, 1940, 1950, 1960]),
+    ("70s", "Rewind '70s", "Grit, grain and flares", "movie", [], [1970]),
+    ("80s", "Rewind '80s", "Big hair, synths and practical effects", "movie", [], [1980]),
+    ("90s", "Rewind '90s", "Be kind, rewind", "movie", [], [1990]),
+    ("00s", "Y2K", "The 2000s, burned to DVD", "movie", [], [2000]),
+    ("western", "High Noon", "Westerns, saddle up", "movie", ["Western"], None),
+    ("war", "The Front Line", "War films and history", "movie", ["War", "History"], None),
+    ("music", "Encore", "Musicals and music films", "movie", ["Music", "Musical"], None),
     ("real", "Real Stuff", "Documentaries and true stories", "tv", ["Documentary", "Reality"], None),
 ]
+NEW_COUNT = 40  # Just Added: the newest this many films
 
 
 class NoChannels(player.PlayError):
@@ -41,13 +55,18 @@ class NoChannels(player.PlayError):
 
 
 # ---------- what each channel can play ----------
-def _plex_movies(token, genres, decade):
+def _plex_movies(token, genres, when):
     out = {}
     for key, kind in library._plex_sections(token):
         if kind != "movie":
             continue
-        ids = library._plex_genre_ids(token, key)
-        filters = [{"decade": decade}] if decade else [{"genre": ids[g]} for g in genres if g in ids]
+        if when == "new":
+            filters = [{"sort": "addedAt:desc", "X-Plex-Container-Start": 0, "X-Plex-Container-Size": NEW_COUNT}]
+        elif when:
+            filters = [{"decade": d} for d in when]
+        else:
+            ids = library._plex_genre_ids(token, key)
+            filters = [{"genre": ids[g]} for g in genres if g in ids]
         for f in filters:
             d = library._px(token, f"/library/sections/{key}/all", type=1, includeGuids=1, **f)
             for m in d.get("Metadata", []):
@@ -85,9 +104,14 @@ def _plex_episodes(token, key, show):
     return arr.cached(f"live:px:eps:{token[-8:]}:{key}", 6 * 3600, load)
 
 
-def _jf_movies(token, uid, genres, decade):
+def _jf_movies(token, uid, genres, when):
     q = {"userId": uid, "Recursive": "true", "IncludeItemTypes": "Movie", "Fields": "ProviderIds,Overview", "Limit": 2000}
-    q.update({"Years": ",".join(str(y) for y in range(decade, decade + 10))} if decade else {"Genres": "|".join(genres)})
+    if when == "new":
+        q.update(SortBy="DateCreated", SortOrder="Descending", Limit=NEW_COUNT)
+    elif when:
+        q["Years"] = ",".join(str(y) for d in when for y in range(d, d + 10))
+    else:
+        q["Genres"] = "|".join(genres)
     out = []
     for it in library._jfget(token, "/Items", **q).get("Items", []):
         ids = {k.lower(): int(v) for k, v in (it.get("ProviderIds") or {}).items() if k.lower() in ("tmdb", "tvdb") and str(v).isdigit()}
@@ -122,13 +146,13 @@ def _ok(x):
 
 def _pool(user, ch, week):
     """Movies: every title that fits. Shows: {show: [episodes in order]} for up to 12 of the genre's shows, picked per week."""
-    key, _, _, kind, genres, decade = ch
+    key, _, _, kind, genres, when = ch
     src, token, ident = player._access(user)
     uid = ident[3:] if src == "jellyfin" else None
 
     def load():
         if kind == "movie":
-            items = _plex_movies(token, genres, decade) if src == "plex" else _jf_movies(token, uid, genres, decade)
+            items = _plex_movies(token, genres, when) if src == "plex" else _jf_movies(token, uid, genres, when)
             return sorted((x for x in items if _ok(x)), key=lambda x: x["id"])
         shows = _plex_shows(token, genres) if src == "plex" else _jf_shows(token, uid, genres)
         rng = random.Random(f"{key}:shows:{week}")
@@ -140,7 +164,8 @@ def _pool(user, ch, week):
             if eps:
                 out[sid] = eps
         return out
-    return arr.cached(f"live:pool:{src}:{token[-8:]}:{key}:{week if kind == 'tv' else ''}", 6 * 3600, load)
+    ttl = 1800 if when == "new" else 6 * 3600
+    return arr.cached(f"live:pool:{src}:{token[-8:]}:{key}:{week if kind == 'tv' else ''}", ttl, load)
 
 
 # ---------- the schedule ----------
@@ -330,7 +355,7 @@ def lineup(user, hours=4, tz=None):
             return ch, _programs(user, ch, now // 1800 * 1800, now + hours * 3600, tz, now)  # from the top of the half hour, for the guide
         except (httpx.HTTPError, ValueError, KeyError, IndexError):
             return ch, None
-    with concurrent.futures.ThreadPoolExecutor(6) as ex:
+    with concurrent.futures.ThreadPoolExecutor(10) as ex:
         results = list(ex.map(one, CHANNELS))
     if all(r is None for _, r in results):
         raise NoChannels(f"Couldn't reach {store.SOURCES[src]} right now.")
@@ -346,16 +371,18 @@ def lineup(user, hours=4, tz=None):
     if not out:
         raise NoChannels(f"Not enough on your {store.SOURCES[src]} to make channels yet.")
     hour = _local_hour(now, tz)
-    return {"now": now, "source": src, "channels": out, "takeover": tk, "host": host.greeting(hour, tk)}
+    wd = _local_date(now, tz).weekday() if tz is not None else None
+    return {"now": now, "source": src, "channels": out, "takeover": tk, "host": host.greeting(hour, tk, user["id"], wd)}
 
 
 def _local_hour(now, tz):
     return datetime.datetime.fromtimestamp(now + tz * 60, datetime.timezone.utc).hour if tz is not None else None
 
 
-def tune(user, key, tz=None):
+def tune(user, key, tz=None, platform=None):
     """What's on a channel right now: {program, offset, next}. offset is seconds into it; negative means it starts in
-    that many seconds (the ident between programmes)."""
+    that many seconds (the ident between programmes). With a platform, the stream is started too (`stream`, as
+    /api/play/start returns it, already set to begin at the right point), so tuning in is a single round trip."""
     ch = next((c for c in CHANNELS if c[0] == key), None)
     if not ch:
         raise player.PlayError("No such channel.")
@@ -373,6 +400,12 @@ def tune(user, key, tz=None):
     tk = takeover_for(_local_date(now, tz)) if tz is not None and key == "fright" else None
     name = TAKEOVERS[tk][0] if tk else ch[1]
     offset = now - cur[1]
-    return {"now": now, "program": _shape(cur), "offset": offset, "next": _shape(nxt) if nxt else None,
+    stream = None
+    if platform and offset > -2:
+        try:
+            stream = player.start(user, cur[0]["id"], 0, platform, live=True, at=max(0.0, offset))
+        except player.PlayError:
+            pass  # the app starts it itself (and shows the error)
+    return {"now": now, "program": _shape(cur), "offset": offset, "next": _shape(nxt) if nxt else None, "stream": stream,
             "channel": {"key": key, "name": name, "tagline": TAKEOVERS[tk][1] if tk else ch[2], "takeover": tk},
-            "host": host.line(_shape(cur), name, _local_hour(now, tz), offset, tk)}
+            "host": host.line(_shape(cur), name, _local_hour(now, tz), offset, tk, user["id"], key)}

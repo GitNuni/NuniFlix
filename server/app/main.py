@@ -579,12 +579,13 @@ class PlayStart(BaseModel):
     offset: float = Field(0, ge=0, le=86400)
     platform: Literal["ios", "tvos", "web"] = "ios"  # web: browsers without built-in HLS (gets H.264 + stereo AAC)
     subtitle: Optional[int] = Field(None, ge=0, le=100000)  # a Plex/Jellyfin track to burn in; 0 = none
+    at: float = Field(0, ge=0, le=86400)  # where the player begins (playlists carry EXT-X-START so it loads that part first)
     live: bool = False  # a live channel: no progress goes to Plex/Jellyfin (resume points and watched status stay as they were)
 
 
 @app.post("/api/play/start")
 def play_start(body: PlayStart, user=Depends(current_user)):
-    return player.start(user, body.id, body.offset, body.platform, body.subtitle, body.live)
+    return player.start(user, body.id, body.offset, body.platform, body.subtitle, body.live, body.at)
 
 
 # ---------- live channels (channels.py) ----------
@@ -596,9 +597,11 @@ def live_lineup(hours: int = Query(4, ge=1, le=12), tz: Optional[int] = Query(No
 
 
 @app.get("/api/live/{key}")
-def live_tune(key: str = Path(pattern=r"^[a-z0-9]{1,20}$"), tz: Optional[int] = Query(None, ge=-840, le=840), user=Depends(current_user)):
-    """What's on one channel right now, how far into it (to tune in part-way), and what the host says."""
-    return channels.tune(user, key, tz)
+def live_tune(key: str = Path(pattern=r"^[a-z0-9]{1,20}$"), tz: Optional[int] = Query(None, ge=-840, le=840),
+              platform: Optional[Literal["ios", "tvos", "web"]] = None, user=Depends(current_user)):
+    """What's on one channel right now, how far into it (to tune in part-way), and what the host says.
+    With platform, the stream is started as well (one round trip to tune in)."""
+    return channels.tune(user, key, tz, platform)
 
 
 # ---------- seasonal horror channel (seasonal.py) ----------

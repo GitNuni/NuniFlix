@@ -1299,7 +1299,7 @@ async function apply(s, popped) {
   if (CUR !== s) return;  // navigated again while this screen was loading
   if (s.swipe) openSwipe(); else closeSwipe();
   if (s.office) openOffice(); else closeOffice();
-  if (s.live) openLive(); else closeLive();
+  if (s.live && !NATIVE()) openLive(); else closeLive();
   if (s.wrapped) openWrapped(); else closeWrapped();
   if (s.match) openMatch(s.match); else if (MT.inApp) closeMatch();
   const open = $("#sheet").classList.contains("on");
@@ -1493,7 +1493,7 @@ async function loadHome() {
       featured: () => `<div class="bbs" id="bb" hidden></div>`,
       office: () => `<button class="ofc" id="ofCard" data-open-office><span class="ofc-bld ofc-win" aria-hidden="true">${"<i></i>".repeat(9)}</span>
         <span class="ofc-txt"><b>${esc(APP())} HQ</b><span class="ofc-live">LIVE</span><div class="ofc-sum">Peek inside the building</div></span><span class="chev">›</span></button>`,
-      live: () => `<button class="ofc lvc" data-open-live><img class="lv-host" src="/host/${hostMood()}.png" alt=""><span class="ofc-txt"><b><span class="lv-dot"></span>Live TV</b>
+      live: () => NATIVE() ? "" : `<button class="ofc lvc" data-open-live><img class="lv-host" src="/host/${hostMood()}.png" alt=""><span class="ofc-txt"><b><span class="lv-dot"></span>Live TV</b>
         <div class="ofc-sum" id="lvSum">Channels made from your library. Tune in to whatever's on.</div></span><span class="chev">›</span></button>`,
       discover: () => f.swipe || f.match ? `<div class="ctas">${f.swipe ? `<button class="cta" data-open-swipe><span class="ico">♥</span><span><b>Swipe</b><small>Trailers, one after another. Right to ${esc(W("request").toLowerCase())}.</small></span></button>` : ""}
         ${f.match ? `<button class="cta alt" data-open-match><span class="ico">⚡</span><span><b>Movie match</b><small>Send someone a link. Swipe until you both like one.</small></span></button>` : ""}</div>` : "",
@@ -3324,8 +3324,8 @@ function loadHls() {
   return new Promise((ok, bad) => { const sc = document.createElement("script"); sc.src = "/vendor/hls.min.js"; sc.onload = ok; sc.onerror = bad; document.head.appendChild(sc); });
 }
 
-async function plStart(e, at, upNext, subtitle) {
-  await plStopStream();
+async function plStart(e, at, upNext, subtitle, pre) {
+  plStopStream();  // no need to wait for the old one to be told it stopped
   PL.ep = e; PL.upNext = upNext; PL.sub = subtitle ?? null;
   if (subtitle != null || PL.vttFor !== e.id) PL.vtt = null;  // a burned-in track replaces drawn subtitles; a new episode drops them
   $("#player .pl-panel")?.setAttribute("hidden", "");
@@ -3333,7 +3333,8 @@ async function plStart(e, at, upNext, subtitle) {
   const v = plBody().querySelector("video"), msg = plBody().querySelector(".pl-msg");
   const fail = text => { if (msg) { msg.textContent = text; msg.hidden = false; } };
   let st;
-  try { st = await api("/play/start", {body: {id: e.id, offset: 0, platform: PL.native ? "ios" : "web", ...(subtitle != null ? {subtitle} : {}), ...(PL.live ? {live: true} : {})}}); }
+  if (!PL.native) loadHls().catch(() => {});  // fetch the player script while the stream starts
+  try { st = pre || await api("/play/start", {body: {id: e.id, offset: 0, at: at > 0 ? at : 0, platform: PL.native ? "ios" : "web", ...(subtitle != null ? {subtitle} : {}), ...(PL.live ? {live: true} : {})}}); }
   catch (err) { return fail(err.message); }
   if (!$("#player")) { api("/play/progress", {body: {session: st.session, position: 0, state: "stopped"}}).catch(() => {}); return; }
   // No progress until the jump to the resume point has happened: a 0:00 report would wipe the resume point.
@@ -3535,7 +3536,13 @@ async function lvLoad() {
   const now = Date.now() / 1000;
   $("#lvClock").textContent = lvHM(now);
   const h = LV.lineup.host;
-  if (h && !$("#lvHost")) { $("#lvList").insertAdjacentHTML("beforebegin", `<div class="lv-hosthd" id="lvHost">${hostHTML(h).replace(/^<div class="lv-hostrow">|<\/div>$/g, "")}</div>`); hostRun($("#lvHost")); }
+  if (h && !$("#lvHost")) {
+    const say = line => { const box = $("#lvHost"); if (!box) return false; box.innerHTML = hostHTML({...h, line}).replace(/^<div class="lv-hostrow">|<\/div>$/g, ""); hostRun(box); return true; };
+    $("#lvList").insertAdjacentHTML("beforebegin", `<div class="lv-hosthd" id="lvHost"></div>`); say(h.line);
+    const lines = h.lines?.length ? h.lines : [h.line]; let n = 0;  // she has more than one thing to say
+    clearInterval(LV.hostTimer);
+    LV.hostTimer = setInterval(() => { if (!document.hidden && !$("#player") && !say(lines[++n % lines.length])) clearInterval(LV.hostTimer); }, 15000);
+  }
   $("#lvList").innerHTML = LV.lineup.channels.map(c => {
     const p = lvNow(c), n = p && c.programs[c.programs.indexOf(p) + 1], on = p && p.start <= now;
     const pct = on ? Math.min(100, (now - p.start) / (p.end - p.start) * 100) : 0;
@@ -3549,7 +3556,7 @@ async function lvLoad() {
   $$("#lvList .lv-ch").forEach(b => b.onclick = () => lvTune(b.dataset.ch));
 }
 async function lvTune(key) {
-  const me = ++LV.tune;
+  const me = ++LV.tune, at0 = Date.now();
   const ch = LV.lineup?.channels.find(c => c.key === key);
   if (!$("#player")) {
     plOpen(ch ? `${ch.number}  ${ch.name}` : "Live TV");
@@ -3562,10 +3569,10 @@ async function lvTune(key) {
   } else if (ch) $("#player .pl-top b").textContent = `${ch.number}  ${ch.name}`;
   PL.live = key; clearTimeout(PL.lvTimer);
   lvStatic();
-  await plStopStream();
+  plStopStream();
   let t;
-  try { t = await api(`/live/${key}?tz=${lvTZ()}`); } catch (e) { if (me === LV.tune) plBody().innerHTML = `<p class="pl-msg">${esc(e.message)}</p>`; return; }
-  if (me !== LV.tune || !$("#player")) return;
+  try { t = await api(`/live/${key}?tz=${lvTZ()}&platform=${PL.native ? "ios" : "web"}`); } catch (e) { if (me === LV.tune) plBody().innerHTML = `<p class="pl-msg">${esc(e.message)}</p>`; return; }
+  if (me !== LV.tune || !$("#player")) { if (t?.stream) api("/play/progress", {body: {session: t.stream.session, position: 0, state: "stopped"}}).catch(() => {}); return; }
   const p = t.program, nx = t.next, chName = t.channel?.name || ch?.name || "";
   if (ch) $("#player .pl-top b").textContent = `${ch.number}  ${chName}`;
   PL.title = {type: p.kind, id: p.ext, title: p.show || p.title};
@@ -3583,7 +3590,7 @@ async function lvTune(key) {
       await new Promise(r => setTimeout(r, 500));
     }
   }
-  await plStart(e, Math.max(0, t.offset), []);
+  await plStart(e, Math.max(0, t.offset + (t.stream ? 0 : (Date.now() - at0) / 1000)), [], undefined, t.stream || undefined);
   if (me !== LV.tune) return;
   const stage = $("#player .pl-stage");
   if (!stage) return;
@@ -3993,6 +4000,7 @@ const HOME_LABELS = {featured: "Featured banner", office: "The Office (live buil
                      theaters: "In theaters", popular: "Popular movies & shows", upcoming: "Coming to theaters",
                      genres: "Categories (new ones each day)"};
 function homeLayoutHTML() {
+  if (NATIVE()) HOME_LABELS.live = "Live TV (on Apple TV and the website)";
   const on = ME.prefs?.home || [], rows = [...on, ...Object.keys(HOME_LABELS).filter(k => !on.includes(k))];
   const off = ME.home_off || [];  // turned off for everyone by the owner: not shown here, but kept in your layout for if it comes back
   return `<div class="list" id="homeLayout">${rows.filter(k => HOME_LABELS[k] && !off.includes(k)).map(k => `<div class="li" data-hk="${k}">
@@ -5299,7 +5307,7 @@ async function start() {
   const link = new URLSearchParams(location.search).get("item")?.match(/^(movie|tv):(\d+)$/);  // from a Discord post or notification
   if (link) { s = {tab: "home", depth: 0, item: {type: link[1], id: +link[2]}}; history.replaceState(null, "", "/"); }
   const liveLink = new URLSearchParams(location.search).get("live");  // /?live opens Live TV, /?live=fright tunes to that channel
-  if (liveLink !== null) { s = {tab: "home", depth: 0, live: true}; LV.autotune = /^[a-z0-9]{1,20}$/.test(liveLink) ? liveLink : null; history.replaceState(null, "", "/"); }
+  if (liveLink !== null && !NATIVE()) { s = {tab: "home", depth: 0, live: true}; LV.autotune = /^[a-z0-9]{1,20}$/.test(liveLink) ? liveLink : null; history.replaceState(null, "", "/"); }
   history.replaceState(s, ""); CUR = {tab: null, depth: 0}; apply(s, true);
   refreshBadge(); setInterval(refreshBadge, 60000);
 }

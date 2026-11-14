@@ -17,6 +17,7 @@ struct HostSays: Decodable, Hashable {
     var name: String
     var mood: String
     var line: String
+    var lines: [String]?   // the guide: she cycles through these
 
     /// Same hours as the server: friendly 6am-5pm, sly until 10pm (and 4-6am), evil in Horror Hours.
     static var moodNow: String {
@@ -69,6 +70,7 @@ struct LiveTune: Decodable {
     var next: LiveProgram?
     var channel: TunedChannel?
     var host: HostSays?
+    var stream: StreamStart?  // already started at the right point (one round trip to tune in)
     struct TunedChannel: Decodable, Hashable { var key: String; var name: String; var tagline: String; var takeover: String? }
 }
 
@@ -129,7 +131,8 @@ struct LiveGuideView: View {
     @FocusState private var focus: String?
     @State private var shown: (LiveChannel, LiveProgram)?
     @State private var lastFocus = Date()
-    @State private var previewing = false   // nobody's touched the remote for a while: the preview cycles channels by itself
+    @State private var previewing = false
+    @State private var hostLine = 0         // which of Vesper's lines she's on (she moves on every 15 s)   // nobody's touched the remote for a while: the preview cycles channels by itself
 
     struct Tuned: Identifiable { let id = UUID(); var key: String }
 
@@ -157,6 +160,12 @@ struct LiveGuideView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(120))
                 if tuned == nil { await load() }
+            }
+        }
+        .task {  // Vesper has more than one thing to say
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                if tuned == nil { hostLine += 1 }
             }
         }
         .task {  // like the old preview channels: left alone, the guide flips through what's on
@@ -222,13 +231,18 @@ struct LiveGuideView: View {
             }
             Spacer(minLength: 0)
             if let h = l.host {
-                HostSprite(mood: h.mood, talking: false, size: 170)
-                    .overlay(alignment: .topLeading) {
-                        Text(h.line).font(.system(size: 20, weight: .semibold)).foregroundStyle(.black).lineLimit(3)
-                            .padding(10).frame(width: 260, alignment: .leading)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 10)).offset(x: -250, y: -10)
-                    }
-                    .padding(.top, 140)
+                let lines = h.lines?.isEmpty == false ? h.lines! : [h.line]
+                let said = lines[hostLine % lines.count]
+                HStack(alignment: .top, spacing: -10) {  // the bubble takes its own room, so it never covers the details
+                    Text(said).font(.system(size: 20, weight: .semibold)).foregroundStyle(.black).lineLimit(4)
+                        .padding(10).frame(width: 250, alignment: .leading)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 10))
+                        .id(said).transition(.opacity)
+                    HostSprite(mood: h.mood, talking: true, size: 170, talkFor: Double(said.count) * 0.045 + 0.6)
+                        .id(said)
+                }
+                .animation(.easeInOut(duration: 0.3), value: said)
+                .padding(.top, 130)
             }
             Picture(url: p.backdrop ?? p.poster)
                 .frame(width: 560, height: 315)
