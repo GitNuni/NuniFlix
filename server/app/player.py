@@ -210,14 +210,14 @@ JF_PROFILE_WEB = {**JF_PROFILE, "TranscodingProfiles": [
      "MaxAudioChannels": "2", "MinSegments": "1", "BreakOnNonKeyFrames": True}]}
 
 
-def start(user, item_id, offset, platform, subtitle=None):
+def start(user, item_id, offset, platform, subtitle=None, live=False):
     """Start a stream of one movie/episode. Returns {url, session}; url is relative to the NuniFlix server.
     subtitle: a Plex/Jellyfin subtitle track to burn into the picture (0 = none, None = leave as it is)."""
     src, token, ident = _access(user)
     client = _client_id(user, platform)
     sid = secrets.token_urlsafe(32)
     s = {"sid": sid, "user": user["id"], "source": src, "token": token, "client": client, "platform": platform,
-         "item": item_id, "seen": time.time(), "started": False, "subtitle": subtitle}
+         "item": item_id, "seen": time.time(), "started": False, "subtitle": subtitle, "live": live}
     try:
         if src == "plex":
             path, query = _plex_start(s, offset)
@@ -288,6 +288,16 @@ def progress(user, sid, position, state, duration=None):
         s["seen"] = time.time()
         if state == "stopped":
             _streams.pop(sid, None)
+    if s.get("live"):  # live channels leave resume points and watched status alone; Plex just gets a keep-alive
+        if state == "stopped":
+            _stop_transcode(s)
+        elif s["source"] == "plex":
+            try:
+                _http.get(_plex_base() + "/video/:/transcode/universal/ping", headers=_plex_h(s["token"], s["client"], s["platform"]),
+                          params={"session": s["sid"]})
+            except httpx.HTTPError:
+                pass
+        return
     try:
         if s["source"] == "plex":
             _plex_timeline(s, position, state, duration)

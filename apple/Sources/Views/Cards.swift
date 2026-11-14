@@ -207,6 +207,7 @@ enum Route: Hashable {
     case yourflix
     case seasonal
     case office
+    case live
 }
 
 struct ErrorView: View {

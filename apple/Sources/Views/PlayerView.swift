@@ -50,8 +50,13 @@ final class Playback: ObservableObject {
     /// (Closing before then reports the resume point itself.)
     private var holdAt: Double?
     /// The title being watched ("movie"/"tv" + its NuniFlix id), for the subtitle search.
-    let kind: String
-    let extID: Int
+    private(set) var kind: String
+    private(set) var extID: Int
+    /// Live channels (channels.py): the channel tuned to, and the others for the Channels menu.
+    private(set) var channelKey: String?
+    var channels: [LiveChannel] = []
+    /// The channel bug and "now / next" card that shows for a few seconds after tuning in, or during the ident.
+    @Published var bug: LiveBug?
     /// The Plex/Jellyfin subtitle track burned in (nil: whatever the server picks; 0: off).
     private(set) var subtitle: Int?
     /// OpenSubtitles text drawn over the picture, and the line showing right now.
@@ -66,6 +71,13 @@ final class Playback: ObservableObject {
         queue = upNext
         self.kind = kind
         self.extID = extID
+    }
+
+    /// Live: tune to a channel instead of playing one title.
+    convenience init(channel: String, channels: [LiveChannel]) {
+        self.init(item: PlayItem(id: "", title: "", resume: 0, duration: 0, watched: false), upNext: [], kind: "movie", extID: 0)
+        channelKey = channel
+        self.channels = channels
     }
 
     static var platform: String {
@@ -87,6 +99,7 @@ final class Playback: ObservableObject {
         do {
             var body: [String: Any] = ["id": current.id, "offset": 0, "platform": Self.platform]
             if let subtitle { body["subtitle"] = subtitle }
+            if channelKey != nil { body["live"] = true }
             let (data, _) = try await API.shared.post("/play/start", body)
             let s: StreamStart = try API.shared.decode(data)
             guard let base = API.shared.base, let url = URL(string: base.absoluteString + s.url) else {
@@ -166,11 +179,53 @@ final class Playback: ObservableObject {
     /// Finished one: on to the next episode, or close.
     private func next() async {
         await stopStream()
+        if let channelKey { await tune(channelKey); return }  // live: whatever the channel shows next
         guard !queue.isEmpty else { finished = true; return }
         current = queue.removeFirst()
         subtitle = nil      // track numbers belong to one episode
         setCues([])
         await start(from: 0)
+    }
+
+    // MARK: live channels (server: channels.py)
+
+    private var tuneTask = 0
+
+    /// Join a channel part-way through whatever it's showing (or wait out the ident if the next show is about to start).
+    func tune(_ key: String) async {
+        tuneTask += 1
+        let me = tuneTask
+        channelKey = key
+        await stopStream()
+        player.pause()
+        subtitle = nil
+        setCues([])
+        let ch = channels.first { $0.key == key }
+        let t: LiveTune
+        do { t = try await API.shared.get("/live/\(key)") } catch {
+            if !(error is CancellationError) { self.error = error.localizedDescription }
+            return
+        }
+        guard me == tuneTask else { return }  // flipped again meanwhile
+        let p = t.program
+        current = PlayItem(id: p.id, title: p.show.map { "\($0): \(p.title ?? "")" } ?? (p.title ?? ""), resume: 0, duration: p.end - p.start, watched: false)
+        kind = p.kind; extID = p.ext ?? 0
+        if t.offset < 0 {  // between programmes: the channel's ident, then it starts
+            player.replaceCurrentItem(with: nil)
+            bug = LiveBug(channel: ch, now: p, next: t.next, startsAt: Date(timeIntervalSinceNow: -t.offset))
+            try? await Task.sleep(for: .seconds(-t.offset))
+            guard me == tuneTask else { return }
+        }
+        let shown = LiveBug(channel: ch, now: p, next: t.next, startsAt: nil)
+        bug = shown
+        await start(from: max(0, t.offset))
+        Task { try? await Task.sleep(for: .seconds(7)); if self.bug == shown { self.bug = nil } }
+    }
+
+    /// Channel up/down.
+    func flip(_ step: Int) async {
+        guard let channelKey, let i = channels.firstIndex(where: { $0.key == channelKey }), !channels.isEmpty else { return }
+        await tune(channels[(i + step + channels.count) % channels.count].key)
     }
 
     // MARK: subtitles (server: subtitles.py)
@@ -319,11 +374,19 @@ struct PlayerScreen: View {
         self.start = start
     }
 
+    /// Live: tuned to a channel (Live TV guide).
+    init(channel: String, channels: [LiveChannel]) {
+        _playback = StateObject(wrappedValue: Playback(channel: channel, channels: channels))
+        start = 0
+    }
+
     var body: some View {
         PlayerController(playback: playback)
             .ignoresSafeArea()
             .background(Color.black)
-            .onAppear { Task { await playback.start(from: start) } }  // not tied to the view: a redraw mustn't cancel it
+            .onAppear {  // not tied to the view: a redraw mustn't cancel it
+                Task { if let key = playback.channelKey { await playback.tune(key) } else { await playback.start(from: start) } }
+            }
             .onDisappear { playback.close() }
             .onChange(of: playback.finished) { _, done in if done { dismiss() } }
             .alert("Can't play this", isPresented: Binding(get: { playback.error != nil }, set: { if !$0 { playback.error = nil } })) {
@@ -346,9 +409,28 @@ private struct PlayerController: UIViewControllerRepresentable {
         #else
         // Swipe down while watching: a Subtitles menu next to Apple's own audio/subtitle controls.
         let pb = playback
-        vc.transportBarCustomMenuItems = [UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), children: [
+        var menus: [UIMenuElement] = [UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), children: [
             UIDeferredMenuElement.uncached { done in Task { @MainActor in done(await pb.subtitleMenu()) } },
         ])]
+        if pb.channelKey != nil {  // live: every channel, and up/down on the clickpad flips
+            menus.insert(UIMenu(title: "Channels", image: UIImage(systemName: "tv"), children: [
+                UIDeferredMenuElement.uncached { done in
+                    Task { @MainActor in
+                        done(pb.channels.map { ch in
+                            UIAction(title: "\(ch.number)  \(ch.name)", subtitle: ch.onNow?.label,
+                                     state: ch.key == pb.channelKey ? .on : .off) { _ in Task { await pb.tune(ch.key) } }
+                        })
+                    }
+                },
+            ]), at: 0)
+            for (press, step) in [(UIPress.PressType.upArrow, 1), (.downArrow, -1)] {
+                let g = UITapGestureRecognizer(target: context.coordinator, action: step > 0 ? #selector(Coordinator.up) : #selector(Coordinator.down))
+                g.allowedPressTypes = [NSNumber(value: press.rawValue)]
+                vc.view.addGestureRecognizer(g)
+            }
+            context.coordinator.playback = pb
+        }
+        vc.transportBarCustomMenuItems = menus
         #endif
         // OpenSubtitles text, drawn over the picture (under the controls).
         let host = UIHostingController(rootView: CaptionView(playback: playback))
@@ -366,7 +448,12 @@ private struct PlayerController: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var host: UIHostingController<CaptionView>? }
+    final class Coordinator: NSObject {
+        var host: UIHostingController<CaptionView>?
+        weak var playback: Playback?
+        @MainActor @objc func up() { Task { await playback?.flip(1) } }
+        @MainActor @objc func down() { Task { await playback?.flip(-1) } }
+    }
 }
 
 /// The current subtitle line, bottom centre, white on a soft shadow box (like Apple's own subtitles).
@@ -374,6 +461,14 @@ struct CaptionView: View {
     @ObservedObject var playback: Playback
 
     var body: some View {
+        ZStack {
+            if let bug = playback.bug { LiveBugView(bug: bug).transition(.opacity) }
+            captions
+        }
+        .animation(.easeInOut(duration: 0.4), value: playback.bug)
+    }
+
+    private var captions: some View {
         VStack {
             Spacer()
             if !playback.caption.isEmpty {

@@ -34,6 +34,7 @@ struct ServicesView: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing)], spacing: Metrics.spacing) {
                     NavigationLink(value: Route.yourflix) { YourFlixTile() }.cardButton()
+                    NavigationLink(value: Route.live) { LiveTile() }.cardButton()
                     NavigationLink(value: Route.seasonal) { SeasonalTile() }.cardButton()
                     NavigationLink(value: Route.office) { OfficeTile(brand: model.brand) }.cardButton()
                     ForEach(providers) { p in

@@ -413,8 +413,8 @@ def perms(u):
     return {**PERM_DEFAULTS, **json.loads(u.get("perms") or "{}")}
 
 
-HOME_ROWS = ("featured", "requests", "office", "discover", "foryou", "movies", "tv", "trending", "theaters", "popular", "upcoming", "genres")
-HOME_DEFAULT = ["featured", "requests", "office", "movies", "trending", "discover", "theaters", "popular", "upcoming", "tv", "genres"]
+HOME_ROWS = ("featured", "requests", "office", "live", "discover", "foryou", "movies", "tv", "trending", "theaters", "popular", "upcoming", "genres")
+HOME_DEFAULT = ["featured", "requests", "office", "live", "movies", "trending", "discover", "theaters", "popular", "upcoming", "tv", "genres"]
 HOME_V3 = ["theaters", "popular", "upcoming", "genres"]  # the "find something new" rows
 
 
@@ -427,6 +427,9 @@ def prefs(u):
     if p.get("home_v", 1) < 4 and "office" not in p["home"]:  # the Office card goes right under the banner
         at = p["home"].index("featured") + 1 if "featured" in p["home"] else 0
         p["home"] = [*p["home"][:at], "office", *p["home"][at:]]
+    if p.get("home_v", 1) < 5 and "live" not in p["home"]:  # Live TV goes under the Office card
+        at = p["home"].index("office") + 1 if "office" in p["home"] else 0
+        p["home"] = [*p["home"][:at], "live", *p["home"][at:]]
     return p
 
 

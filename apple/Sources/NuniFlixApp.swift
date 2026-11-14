@@ -72,6 +72,7 @@ struct MainView: View {
                     case .yourflix: YourFlixView()
                     case .seasonal: SeasonalPage()
                     case .office: OfficeView()
+                    case .live: LiveGuideView()
                     case .library(let genre): LibraryPage(genre: genre)
                     case .libraryAll(let title, let q): BrowseGridView(provider: nil, title: title, query: q)
                     }
@@ -79,7 +80,8 @@ struct MainView: View {
         }
         .task { await model.loadMe() }
         #if DEBUG
-        .onAppear { if ProcessInfo.processInfo.environment["NF_ROUTE"] == "office" { path.append(Route.office) } }  // simulator previews only
+        .onAppear { if ProcessInfo.processInfo.environment["NF_ROUTE"] == "office" { path.append(Route.office) }
+                              if ProcessInfo.processInfo.environment["NF_ROUTE"] == "live" { path.append(Route.live) } }  // simulator previews only
         #endif
         .onOpenURL { url in  // nuniflix://item/movie/603 (Top Shelf)
             let parts = url.pathComponents.filter { $0 != "/" }

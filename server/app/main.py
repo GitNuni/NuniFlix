@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 import random
 
-import accounts, apns, arr, history, library, media, notify, office, player, seasonal, store, subtitles, tmdb
+import accounts, apns, arr, channels, history, library, media, notify, office, player, seasonal, store, subtitles, tmdb
 
 VERSION = "0.4.0"
 COOKIE = "nf_token"
@@ -428,7 +428,7 @@ def set_prefs(body: Prefs, user=Depends(current_user)):
     p = store.prefs(user) | {k: v for k, v in body.model_dump().items() if v is not None}
     if body.home is not None:
         p["home"] = [r for r in dict.fromkeys(body.home) if r in store.HOME_ROWS]
-        p["home_v"] = 4
+        p["home_v"] = 5
     store.run("update users set prefs=? where id=?", (json.dumps(p), user["id"]))
     return {"prefs": p}
 
@@ -579,11 +579,25 @@ class PlayStart(BaseModel):
     offset: float = Field(0, ge=0, le=86400)
     platform: Literal["ios", "tvos", "web"] = "ios"  # web: browsers without built-in HLS (gets H.264 + stereo AAC)
     subtitle: Optional[int] = Field(None, ge=0, le=100000)  # a Plex/Jellyfin track to burn in; 0 = none
+    live: bool = False  # a live channel: no progress goes to Plex/Jellyfin (resume points and watched status stay as they were)
 
 
 @app.post("/api/play/start")
 def play_start(body: PlayStart, user=Depends(current_user)):
-    return player.start(user, body.id, body.offset, body.platform, body.subtitle)
+    return player.start(user, body.id, body.offset, body.platform, body.subtitle, body.live)
+
+
+# ---------- live channels (channels.py) ----------
+@app.get("/api/live")
+def live_lineup(hours: int = Query(4, ge=1, le=12), user=Depends(current_user)):
+    """The channels made from this person's library and what's on them now and for the next few hours."""
+    return channels.lineup(user, hours)
+
+
+@app.get("/api/live/{key}")
+def live_tune(key: str = Path(pattern=r"^[a-z0-9]{1,20}$"), user=Depends(current_user)):
+    """What's on one channel right now, and how far into it (to tune in part-way)."""
+    return channels.tune(user, key)
 
 
 # ---------- seasonal horror channel (seasonal.py) ----------

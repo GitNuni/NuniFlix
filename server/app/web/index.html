@@ -212,7 +212,7 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
 .player .pl-top{display:flex;align-items:center;gap:10px;height:52px;padding:0 12px 0 16px;flex:none}
 .player .pl-top b{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}
 .player .pl-exp{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#ffd34d;border:1px solid rgba(255,211,77,.5);border-radius:6px;padding:3px 6px}
-.player .close{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:16px}
+.player .close{position:static;flex:none;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:16px}
 .player .pl-cc{height:30px;padding:0 9px;border-radius:6px;border:1.5px solid rgba(255,255,255,.8);color:#fff;font-weight:800;font-size:12px;letter-spacing:.04em}
 .player .pl-panel{position:absolute;right:12px;top:calc(env(safe-area-inset-top) + 56px);width:min(360px,calc(100% - 24px));max-height:70%;overflow-y:auto;
   background:rgba(28,28,30,.97);border-radius:14px;padding:10px;z-index:2;box-shadow:0 10px 40px rgba(0,0,0,.6)}
@@ -861,6 +861,46 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 :root[data-theme="repertory"] .hero-tr{mix-blend-mode:luminosity}
 
 /* ---------- the Office (same look in every theme: a pixel-art building at night) ---------- */
+/* Live TV (channels.py): a retro TV guide, then the player tuned to a channel */
+.live{position:fixed;inset:0;z-index:25;overflow-y:auto;overscroll-behavior:contain;color:#fff;background:linear-gradient(#0a1034,#000 70%);
+  padding-top:env(safe-area-inset-top)}
+.live .lv-top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;height:52px;padding:0 14px;background:rgba(10,16,52,.92);backdrop-filter:blur(10px)}
+.live .lv-top b{flex:1;font:800 16px/1 ui-monospace,Menlo,monospace;letter-spacing:.04em}
+.live .lv-top .sw-close{background:rgba(255,255,255,.14);color:#fff}
+.lv-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff2d3d;box-shadow:0 0 8px #ff2d3d;margin-right:8px;vertical-align:1px}
+.live .lv-clock{font:600 13px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.6)}
+.live .lv-list{max-width:760px;margin:0 auto;padding:6px 12px 40px}
+.live .lv-ch{display:flex;gap:12px;width:100%;text-align:left;color:#fff;padding:12px;margin:8px 0;border-radius:12px;background:#16205a;border:1px solid #2b3a8c}
+.live .lv-ch:hover,.live .lv-ch:focus-visible{background:#1f2d78;outline:none;border-color:#5ce1ff}
+.live .lv-ch img{width:92px;height:52px;object-fit:cover;border-radius:6px;flex:none;background:#0a1034}
+.live .lv-no{font:900 22px/1 ui-monospace,Menlo,monospace;color:#ffd54a;width:30px;flex:none;text-align:right;padding-top:2px}
+.live .lv-body{flex:1;min-width:0}
+.live .lv-name{font:800 12px/1.2 ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#ffd54a;text-transform:uppercase}
+.live .lv-now{font-weight:700;font-size:16px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.live .lv-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.15);margin:7px 0 6px;overflow:hidden}
+.live .lv-bar i{display:block;height:100%;background:#5ce1ff}
+.live .lv-next{font:500 12px/1.3 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.live .lv-note{text-align:center;color:rgba(255,255,255,.6);padding:40px 20px}
+.player .pl-flip{width:32px;height:32px;flex:none;border-radius:8px;background:rgba(255,255,255,.14);color:#fff;font-size:13px}
+.player .pl-top > *:not(b){flex:none}
+@media (max-width:480px){.player.lv .pl-exp{display:none}.player.lv .pl-top{gap:7px}}
+.player .lv-bug{position:absolute;top:52px;right:14px;font:900 14px/1 ui-monospace,Menlo,monospace;letter-spacing:.05em;color:rgba(255,255,255,.85);
+  background:rgba(0,0,0,.35);padding:6px 9px;border-radius:6px;pointer-events:none;transition:opacity .5s}
+.player .lv-card{position:absolute;left:14px;right:14px;bottom:64px;max-width:560px;padding:12px 14px;border-radius:12px;background:rgba(10,16,52,.88);
+  pointer-events:none;transition:opacity .5s;font-size:15px}
+.player .lv-card div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0}
+.player .lv-card em{font:900 11px/1 ui-monospace,Menlo,monospace;font-style:normal;padding:3px 6px;margin-right:8px;background:#ffd54a;color:#000;vertical-align:1px}
+.player .lv-card em.n{background:#2b3a8c;color:#fff}
+.player .lv-card small{font:600 12px ui-monospace,Menlo,monospace;color:#5ce1ff;margin-left:8px}
+.player .lv-ident{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;height:100%;text-align:center;padding:20px;
+  background:linear-gradient(#0a1034,#000)}
+.player .lv-ident .big{font:900 84px/1 ui-monospace,Menlo,monospace;color:#ffd54a;text-shadow:0 0 24px rgba(255,213,74,.5)}
+.player .lv-ident .nm{font:900 26px/1 ui-monospace,Menlo,monospace;letter-spacing:.06em}
+.player .lv-ident .tg{color:rgba(255,255,255,.6)}
+.player .lv-ident .up{margin-top:22px;font:700 12px ui-monospace,Menlo,monospace;color:#5ce1ff;letter-spacing:.08em}
+.player .lv-ident .t{font-size:20px;font-weight:800}
+.player .lv-ident .cd{font:600 15px ui-monospace,Menlo,monospace;color:rgba(255,255,255,.7)}
+.ofc.lvc{background:linear-gradient(135deg,#0a1034,#24308c)}
 .office{position:fixed;inset:0;z-index:25;overflow-y:auto;overscroll-behavior:contain;color:#f3eefc;
   background:linear-gradient(180deg,#070a1c 0,#141a3a 420px,#1d1838 1000px,#17131f);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
   padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
@@ -970,6 +1010,7 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 <section id="setup" class="setup" hidden></section>
 <section id="swipe" class="swipe" hidden></section>
 <section id="office" class="office" hidden aria-label="The Office, live"></section>
+<section id="live" class="live" hidden aria-label="Live TV"></section>
 <section id="wrapped" class="wrapped" hidden></section>
 <section id="match" class="match" hidden></section>
 
@@ -1217,7 +1258,7 @@ function back() {
   if (CUR.depth > 0) return history.back();
   // opened straight onto this screen (fresh load): step up to its parent instead
   if (CUR.item || CUR.person) return nav({...CUR, item: null, person: null}, true);
-  if (CUR.swipe || CUR.wrapped || CUR.match || CUR.office) return nav({...CUR, swipe: false, wrapped: false, match: null, office: false}, true);
+  if (CUR.swipe || CUR.wrapped || CUR.match || CUR.office || CUR.live) return nav({...CUR, swipe: false, wrapped: false, match: null, office: false, live: false}, true);
   if (CUR.tab === "home" && CUR.view) return nav({tab: "home"}, true);
   if (CUR.view === "all") return nav({...CUR, view: "rows"}, true);
   if (CUR.prov) return nav({tab: "browse"}, true);
@@ -1227,7 +1268,7 @@ window.addEventListener("popstate", e => { if (ME) apply(e.state?.tab ? e.state 
 const screenKey = s => [s.tab, s.prov?.id, s.kind, s.view, s.cat, s.sort].join("|");
 async function apply(s, popped) {
   const prev = CUR; CUR = s;
-  const {item, person, swipe, wrapped, match, office, y, ...screen} = s; LAST[s.tab] = screen;
+  const {item, person, swipe, wrapped, match, office, live, y, ...screen} = s; LAST[s.tab] = screen;
   if (screenKey(prev) !== screenKey(s)) {
     $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === s.tab));
     $$("main .screen").forEach(el => el.hidden = el.dataset.tab !== s.tab);
@@ -1240,6 +1281,7 @@ async function apply(s, popped) {
   if (CUR !== s) return;  // navigated again while this screen was loading
   if (s.swipe) openSwipe(); else closeSwipe();
   if (s.office) openOffice(); else closeOffice();
+  if (s.live) openLive(); else closeLive();
   if (s.wrapped) openWrapped(); else closeWrapped();
   if (s.match) openMatch(s.match); else if (MT.inApp) closeMatch();
   const open = $("#sheet").classList.contains("on");
@@ -1433,6 +1475,8 @@ async function loadHome() {
       featured: () => `<div class="bbs" id="bb" hidden></div>`,
       office: () => `<button class="ofc" id="ofCard" data-open-office><span class="ofc-bld ofc-win" aria-hidden="true">${"<i></i>".repeat(9)}</span>
         <span class="ofc-txt"><b>${esc(APP())} HQ</b><span class="ofc-live">LIVE</span><div class="ofc-sum">Peek inside the building</div></span><span class="chev">›</span></button>`,
+      live: () => `<button class="ofc lvc" data-open-live><span class="ofc-txt"><b><span class="lv-dot"></span>Live TV</b>
+        <div class="ofc-sum" id="lvSum">Channels made from your library. Tune in to whatever's on.</div></span><span class="chev">›</span></button>`,
       discover: () => f.swipe || f.match ? `<div class="ctas">${f.swipe ? `<button class="cta" data-open-swipe><span class="ico">♥</span><span><b>Swipe</b><small>Trailers, one after another. Right to ${esc(W("request").toLowerCase())}.</small></span></button>` : ""}
         ${f.match ? `<button class="cta alt" data-open-match><span class="ico">⚡</span><span><b>Movie match</b><small>Send someone a link. Swipe until you both like one.</small></span></button>` : ""}</div>` : "",
       foryou: () => `<div id="forYou"></div>`,
@@ -1450,6 +1494,10 @@ async function loadHome() {
     const browse = ["featured", "theaters", "popular", "upcoming", "genres"].some(k => layout.includes(k))
       ? api("/home/discover", {quiet: true}).catch(() => ({rows: [], hero: null})) : null;
     if (layout.includes("office")) fillOfficeCard();
+    if (layout.includes("live")) api("/live?hours=1", {quiet: true}).then(d => {
+      const c = d.channels[0], p = c && lvNow(c);
+      if (p && $("#lvSum")) $("#lvSum").textContent = `${d.channels.length} channels · On ${c.name} now: ${p.show || p.title}`;
+    }).catch(() => { $("[data-open-live]")?.remove(); });
     if (layout.includes("featured")) browse.then(d => fillFeatured(d.heroes || (d.hero ? [d.hero] : []), h.recent_movies));
     if (browse) browse.then(d => $$("#homeBody .hd").forEach(el => {
       el.innerHTML = d.rows.filter(r => r.key === el.dataset.hd).map(r => row(esc(r.title), r.items, "", r.key === "upcoming" ? "" : "bare")).join("");
@@ -1498,7 +1546,7 @@ async function fillFeatured(heroes, list) {
     const sl = e.target.closest(".bb");
     if (sl && (e.target.closest(".bb-req") || !e.target.closest("a,button"))) nav({...CUR, item: ref(items[+sl.dataset.i])});
   };
-  const home = () => CUR.tab === "home" && !CUR.view && !CUR.item && !CUR.person && !CUR.swipe && !CUR.match && !CUR.wrapped && !CUR.office
+  const home = () => CUR.tab === "home" && !CUR.view && !CUR.item && !CUR.person && !CUR.swipe && !CUR.match && !CUR.wrapped && !CUR.office && !CUR.live
     && !document.hidden && el.isConnected && el.getBoundingClientRect().bottom > 80;
   async function show(i) {
     if (i === cur || !slides[i]) return;
@@ -3103,12 +3151,13 @@ document.addEventListener("click", e => {
 });
 $("#scrim").addEventListener("click", closeSheet);
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") { if (CUR.item || CUR.person) closeSheet(); else if (CUR.swipe || CUR.wrapped || CUR.office) back(); }
+  if (e.key === "Escape") { if (CUR.item || CUR.person) closeSheet(); else if (CUR.swipe || CUR.wrapped || CUR.office || (CUR.live && !$("#player"))) back(); }
   if (CUR.swipe && !CUR.item && (e.key === "ArrowRight" || e.key === "ArrowLeft")) swAct(e.key === "ArrowRight" ? "like" : "skip");
 });
 document.addEventListener("click", e => {
   if (e.target.closest("[data-open-swipe]")) nav({...CUR, swipe: true});
   if (e.target.closest("[data-open-office]")) nav({...CUR, office: true});
+  if (e.target.closest("[data-open-live]")) nav({...CUR, live: true});
   if (e.target.closest("[data-open-wrapped]")) nav({...CUR, wrapped: true});
   if (e.target.closest("[data-open-match]")) nav({...CUR, match: "new"});
 });
@@ -3266,7 +3315,7 @@ async function plStart(e, at, upNext, subtitle) {
   const v = plBody().querySelector("video"), msg = plBody().querySelector(".pl-msg");
   const fail = text => { if (msg) { msg.textContent = text; msg.hidden = false; } };
   let st;
-  try { st = await api("/play/start", {body: {id: e.id, offset: 0, platform: PL.native ? "ios" : "web", ...(subtitle != null ? {subtitle} : {})}}); }
+  try { st = await api("/play/start", {body: {id: e.id, offset: 0, platform: PL.native ? "ios" : "web", ...(subtitle != null ? {subtitle} : {}), ...(PL.live ? {live: true} : {})}}); }
   catch (err) { return fail(err.message); }
   if (!$("#player")) { api("/play/progress", {body: {session: st.session, position: 0, state: "stopped"}}).catch(() => {}); return; }
   // No progress until the jump to the resume point has happened: a 0:00 report would wipe the resume point.
@@ -3284,7 +3333,7 @@ async function plStart(e, at, upNext, subtitle) {
   v.addEventListener("playing", () => { msg.hidden = true; });
   v.addEventListener("ended", async () => {
     await plStopStream();
-    if (upNext.length) plStart(upNext[0], 0, upNext.slice(1)); else plClose();
+    if (PL.live) lvTune(PL.live); else if (upNext.length) plStart(upNext[0], 0, upNext.slice(1)); else plClose();
   });
   v.addEventListener("error", () => fail("The video wouldn't play here. Try Play in Plex or Play in Jellyfin."));
   v.addEventListener("timeupdate", () => { if (Date.now() - PL.cur?.last > 10000) plReport("auto"); });
@@ -3379,7 +3428,103 @@ async function plStopStream(beacon) {
   await api("/play/progress", {body}).catch(() => {});
 }
 
+/* ---------- Live TV (server: channels.py) ----------
+   The guide lists each channel with what's on and what's next; tapping one opens the player part-way into whatever it's
+   showing. ▲/▼ in the player (or the arrow keys) flip channels; when a show ends the channel carries on by itself. */
+const LV = {lineup: null, timer: null, tune: 0};
+const lvHM = t => new Date(t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+const lvNow = c => c.programs.find(p => p.slot_end > Date.now() / 1000);
+const lvLabel = p => p.show ? `${p.show}: ${p.title || ""}` : (p.title || "");
+async function openLive() {
+  const el = $("#live");
+  if (!el.hidden) return;
+  el.hidden = false; document.body.style.overflow = "hidden";
+  el.innerHTML = `<div class="lv-top"><button class="sw-close" aria-label="Close">✕</button><b><span class="lv-dot"></span>LIVE TV</b><span class="lv-clock" id="lvClock"></span></div>
+    <div class="lv-list" id="lvList"><p class="lv-note">Warming up the channels…</p></div>`;
+  $(".sw-close", el).onclick = back;
+  await lvLoad();
+  if (LV.autotune && LV.lineup?.channels.some(c => c.key === LV.autotune)) lvTune(LV.autotune);
+  LV.autotune = null;
+  LV.timer = setInterval(() => { if (!document.hidden && !$("#player")) lvLoad(); }, 60000);
+}
+function closeLive() {
+  const el = $("#live");
+  if (el.hidden) return;
+  clearInterval(LV.timer); LV.timer = null;
+  if (PL.live) plClose();
+  el.hidden = true; el.innerHTML = ""; document.body.style.overflow = "";
+}
+async function lvLoad() {
+  try { LV.lineup = await api("/live?hours=4", {quiet: true}); }
+  catch (e) { if ($("#lvList")) $("#lvList").innerHTML = `<p class="lv-note">${esc(e.message)}</p>`; return; }
+  if (!$("#lvList")) return;
+  const now = Date.now() / 1000;
+  $("#lvClock").textContent = lvHM(now);
+  $("#lvList").innerHTML = LV.lineup.channels.map(c => {
+    const p = lvNow(c), n = p && c.programs[c.programs.indexOf(p) + 1], on = p && p.start <= now;
+    const pct = on ? Math.min(100, (now - p.start) / (p.end - p.start) * 100) : 0;
+    return `<button class="lv-ch" data-ch="${esc(c.key)}"><span class="lv-no">${c.number}</span>
+      ${p?.backdrop || p?.poster ? `<img src="${esc(p.backdrop || p.poster)}" alt="" loading="lazy">` : ""}
+      <span class="lv-body"><span class="lv-name">${esc(c.name)}</span>
+        <div class="lv-now">${p ? esc(lvLabel(p)) : "Off air"}</div>
+        <div class="lv-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+        <div class="lv-next">${p ? (on ? `until ${lvHM(p.end)}` : `starts ${lvHM(p.start)}`) : ""}</div>${n ? `<div class="lv-next">Next: ${esc(n.show || n.title || "")} · ${lvHM(n.start)}</div>` : ""}</span></button>`;
+  }).join("");
+  $$("#lvList .lv-ch").forEach(b => b.onclick = () => lvTune(b.dataset.ch));
+}
+async function lvTune(key) {
+  const me = ++LV.tune;
+  const ch = LV.lineup?.channels.find(c => c.key === key);
+  if (!$("#player")) {
+    plOpen(ch ? `${ch.number}  ${ch.name}` : "Live TV");
+    $("#player").classList.add("lv");
+    const top = $("#player .pl-top");
+    top.querySelector(".pl-exp").textContent = "live";
+    top.querySelector(".close").insertAdjacentHTML("beforebegin", `<button class="pl-flip" data-flip="-1" aria-label="Channel down">▼</button><button class="pl-flip" data-flip="1" aria-label="Channel up">▲</button>`);
+    $$("#player [data-flip]").forEach(b => b.onclick = () => lvFlip(+b.dataset.flip));
+    document.addEventListener("keydown", lvKey);
+  } else if (ch) $("#player .pl-top b").textContent = `${ch.number}  ${ch.name}`;
+  PL.live = key; clearTimeout(PL.lvTimer);
+  await plStopStream();
+  let t;
+  try { t = await api(`/live/${key}`); } catch (e) { if (me === LV.tune) plBody().innerHTML = `<p class="pl-msg">${esc(e.message)}</p>`; return; }
+  if (me !== LV.tune || !$("#player")) return;
+  const p = t.program, nx = t.next;
+  PL.title = {type: p.kind, id: p.ext, title: p.show || p.title};
+  const e = {id: p.id, title: lvLabel(p), resume: 0, duration: p.end - p.start, watched: false};
+  if (t.offset < 0) {  // between shows: the channel's ident and a countdown
+    const at = Date.now() - t.offset * 1000;
+    plBody().innerHTML = `<div class="lv-ident">${ch ? `<div class="big">${ch.number}</div><div class="nm">${esc(ch.name.toUpperCase())}</div><div class="tg">${esc(ch.tagline)}</div>` : ""}
+      <div class="up">UP NEXT</div><div class="t">${esc(lvLabel(p))}</div><div class="cd" id="lvCd"></div></div>`;
+    while (Date.now() < at) {
+      if (me !== LV.tune || !$("#lvCd")) return;
+      const s = Math.ceil((at - Date.now()) / 1000);
+      $("#lvCd").textContent = `Starts in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  await plStart(e, Math.max(0, t.offset), []);
+  if (me !== LV.tune) return;
+  const stage = $("#player .pl-stage");
+  if (!stage) return;
+  stage.insertAdjacentHTML("beforeend", `${ch ? `<div class="lv-bug">${ch.number} ${esc(ch.name.toUpperCase())}</div>` : ""}
+    <div class="lv-card"><div><em>NOW</em>${esc(lvLabel(p))}<small>until ${lvHM(p.end)}</small></div>
+    ${nx ? `<div><em class="n">NEXT</em>${esc(lvLabel(nx))}<small>${lvHM(nx.start)}</small></div>` : ""}</div>`);
+  PL.lvTimer = setTimeout(() => $$("#player .lv-card, #player .lv-bug").forEach(x => x.style.opacity = 0), 7000);
+}
+function lvFlip(step) {
+  const chs = LV.lineup?.channels || [], i = chs.findIndex(c => c.key === PL.live);
+  if (i < 0 || !chs.length) return;
+  lvTune(chs[(i + step + chs.length) % chs.length].key);
+}
+const lvKey = e => {
+  if (!PL.live || !$("#player")) return document.removeEventListener("keydown", lvKey);
+  if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); lvFlip(1); }
+  if (e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); lvFlip(-1); }
+};
+
 function plClose() {
+  PL.live = null; clearTimeout(PL.lvTimer);
   plStopStream();
   $("#player")?.remove();
   document.removeEventListener("keydown", plKey);
@@ -3761,7 +3906,7 @@ async function refreshBadge() {
 }
 
 /* ---------- home layout (per person, saved to the account) ---------- */
-const HOME_LABELS = {featured: "Featured banner", office: "The Office (live building)", requests: "Your requests", discover: "Swipe & Movie match", foryou: "Because you watched…",
+const HOME_LABELS = {featured: "Featured banner", office: "The Office (live building)", live: "Live TV (channels from your library)", requests: "Your requests", discover: "Swipe & Movie match", foryou: "Because you watched…",
                      movies: "Now playing (movies on the server)", tv: "New episodes", trending: "Top 10 this week",
                      theaters: "In theaters", popular: "Popular movies & shows", upcoming: "Coming to theaters",
                      genres: "Categories (new ones each day)"};
@@ -5071,6 +5216,8 @@ async function start() {
   let s = history.state?.tab ? history.state : {tab: "home", depth: 0};  // a reload stays on the same screen
   const link = new URLSearchParams(location.search).get("item")?.match(/^(movie|tv):(\d+)$/);  // from a Discord post or notification
   if (link) { s = {tab: "home", depth: 0, item: {type: link[1], id: +link[2]}}; history.replaceState(null, "", "/"); }
+  const liveLink = new URLSearchParams(location.search).get("live");  // /?live opens Live TV, /?live=fright tunes to that channel
+  if (liveLink !== null) { s = {tab: "home", depth: 0, live: true}; LV.autotune = /^[a-z0-9]{1,20}$/.test(liveLink) ? liveLink : null; history.replaceState(null, "", "/"); }
   history.replaceState(s, ""); CUR = {tab: null, depth: 0}; apply(s, true);
   refreshBadge(); setInterval(refreshBadge, 60000);
 }
