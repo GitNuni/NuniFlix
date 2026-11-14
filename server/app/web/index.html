@@ -395,6 +395,39 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
   box-shadow:0 2px 8px rgba(0,0,0,.18);transition:transform .15s}
 .svc:active img{transform:scale(.94)}
 .svc span{display:block;font-size:12px;font-weight:500;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.services.hrow{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:clamp(70px,19vw,96px);overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.services.hrow::-webkit-scrollbar{display:none}
+/* Home sections: YourFlix, Seasonal genres, Streaming */
+.hgrp{margin-top:30px}
+.hgrp:first-child{margin-top:8px}
+#homeBody h2.hsec{font-size:26px;font-weight:900;letter-spacing:-.01em;margin:0 0 6px;padding-bottom:8px;border-bottom:1px solid var(--line,rgba(255,255,255,.12))}
+.hsec .dot{color:var(--accent)}
+.hgrp:not(:has(.row,.ofc,.ctas,.shelf,.svc,.bbs,.hd h2,#trendRow h2,#forYou h2))>.hsec{display:none}
+/* the shelves: wide pixel-art tiles */
+.shelves{display:grid;grid-auto-flow:column;grid-auto-columns:clamp(220px,62vw,300px);gap:12px;overflow-x:auto;scrollbar-width:none;padding:6px 0 4px;scroll-snap-type:x mandatory}
+.shelves::-webkit-scrollbar{display:none}
+.shelf{position:relative;aspect-ratio:2/1;border-radius:calc(var(--radius) + 2px);overflow:hidden;text-align:left;color:#fff;background:#0b0b12;scroll-snap-align:start;
+  box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.shelf img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
+.shelf::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,rgba(0,0,0,.82))}
+.shelf .sh-t{position:absolute;left:12px;right:12px;bottom:10px;z-index:1;display:block}
+.shelf .sh-t b{display:block;font-size:19px;font-weight:900;text-shadow:2px 2px 0 #000}
+.shelf .sh-t small{display:block;font-size:12px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shelf .sh-now{position:absolute;top:8px;right:8px;z-index:1;font-style:normal;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  background:var(--accent);color:#fff;padding:3px 7px;border-radius:5px}
+.shelf:active{transform:scale(.97)}
+.shelf-hero{position:relative;margin:8px 0 6px;aspect-ratio:2.4/1;border-radius:calc(var(--radius) + 2px);overflow:hidden;background:#0b0b12}
+.shelf-hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
+.shelf-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 35%,rgba(0,0,0,.8))}
+.shelf-hero div{position:absolute;left:16px;right:16px;bottom:12px;z-index:1;color:#fff}
+.shelf-hero h1{margin:0;font-size:clamp(28px,7vw,44px);font-weight:900;text-shadow:3px 3px 0 #000}
+.shelf-hero p{margin:2px 0 0;opacity:.9}
+:root[data-theme="pixel"] .shelf,:root[data-theme="pixel"] .shelf-hero,:root[data-theme="pixel"] .sh-now{border-radius:0}
+:root[data-theme="pixel"] .shelf{box-shadow:inset 0 0 0 3px rgba(0,0,0,.4),4px 4px 0 #000}
+:root[data-theme="pixel"] .shelf .sh-t b,:root[data-theme="pixel"] .shelf-hero h1{font-family:"Press Start 2P",monospace;font-size:13px;line-height:1.5;color:#FFD43B;text-shadow:2px 2px 0 #FF2E4D,4px 4px 0 #000}
+:root[data-theme="pixel"] .shelf-hero h1{font-size:clamp(18px,4.5vw,28px)}
+:root[data-theme="pixel"] #homeBody h2.hsec{font-size:clamp(15px,4.2vw,20px);color:#FFD43B;text-shadow:2px 2px 0 #FF2E4D,4px 4px 0 #000;border-bottom:3px solid rgba(0,0,0,.4);margin-top:0}
+:root[data-theme="pixel"] .hsec .dot{color:inherit}
 .back{color:var(--accent);font-size:17px;padding:6px 0;margin-bottom:6px}
 .prov-head{display:flex;align-items:center;gap:12px;margin:2px 0 14px}
 .prov-head img{width:52px;height:52px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
@@ -1522,8 +1555,28 @@ $("#provKind").addEventListener("click", e => { const b = e.target.closest("butt
 $("#provSort").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
   nav({...CUR, sort: b.dataset.s}, true); });
 
+/* ---------- shelves: permanent themed tiles (Kids, Christmas, Halloween, Horror...), pixel art from /shelves/ ---------- */
+const HOME_STREAMING = ["streaming", "trending", "discover", "theaters", "popular", "upcoming", "genres"];
+const shelfTile = x => `<button class="shelf" data-shelf="${esc(x.key)}"><img src="${esc(x.art)}" alt="">
+  ${x.now ? `<i class="sh-now">In season</i>` : ""}<span class="sh-t"><b>${esc(x.title)}</b><small>${esc(x.tagline || "")}</small></span></button>`;
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-shelf]"); if (b) nav({tab: "home", view: "shelf", cat: b.dataset.shelf});
+});
+async function loadShelf(key) {
+  $("#homeBody").innerHTML = `<button class="back" data-home-back>‹ Home</button><div class="spin"></div>`;
+  $("[data-home-back]").onclick = back;
+  try {
+    const d = await api(`/shelves/${encodeURIComponent(key)}`);
+    if (CUR.view !== "shelf" || CUR.cat !== key) return;
+    $("#homeBody .spin").outerHTML = `<div class="shelf-hero"><img src="${esc(d.art)}" alt=""><div><h1>${esc(d.title)}</h1><p>${esc(d.tagline || "")}</p></div></div>` +
+      (d.rows.length ? d.rows.map(r => `<h2>${esc(r.title)}</h2><div class="row">${r.items.map(tile).join("")}</div>`).join("")
+        : `<p class="empty">Nothing on this shelf yet.${ME.owner ? " Browsing needs a TMDB key (Settings)." : ""}</p>`);
+  } catch (e) { $("#homeBody .spin").outerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+}
+
 /* ---------- home ---------- */
 async function loadHome() {
+  if (CUR.view === "shelf") return loadShelf(CUR.cat);
   if (CUR.view === "movie" || CUR.view === "tv") {  // "See all" on a home row
     const k = CUR.view;
     $("#homeBody").innerHTML = `<button class="back" data-home-back>‹ Home</button><h2>${k === "movie" ? "Now playing" : "New episodes"}</h2><div class="spin"></div>`;
@@ -1538,8 +1591,11 @@ async function loadHome() {
   try {
     const h = await api("/home");
     const mine = h.my_requests.filter(r => r.status !== "denied").slice(0, 12);
-    const layout = (ME.prefs?.home || ["featured", "requests", "office", "movies", "trending", "discover", "theaters", "popular", "upcoming", "tv", "genres"])
+    const layout = (ME.prefs?.home || ["featured", "requests", "office", "movies", "tv", "shelves", "streaming", "trending", "discover", "theaters", "popular", "upcoming", "genres"])
       .filter(k => !(ME.home_off || []).includes(k));
+    // Home comes in sections (YourFlix, Seasonal genres, Streaming); your order is kept inside each one
+    const grp = k => k === "featured" ? 0 : k === "shelves" ? 2 : HOME_STREAMING.includes(k) ? 3 : 1;
+    layout.sort((a, b) => grp(a) - grp(b));
     $("#dateline").innerHTML = `<span>${new Date().toLocaleDateString(undefined, {weekday: "long", month: "long", day: "numeric"})}</span>`;
     const lead = h.recent_movies.find(m => m.poster)?.poster;  // Premiere: Home glows with the newest movie's color
     if (lead && INK_THEMES.includes(theme())) posterHue(lead).then(hue => {
@@ -1565,9 +1621,14 @@ async function loadHome() {
       trending: () => `<div id="trendRow"></div>`,
       theaters: () => `<div class="hd" data-hd="theaters"></div>`, popular: () => `<div class="hd" data-hd="popular"></div>`,
       upcoming: () => `<div class="hd" data-hd="upcoming"></div>`, genres: () => `<div class="hd" data-hd="genres"></div>`,
+      shelves: () => `<div class="shelves" id="shelfRow"></div>`,
+      streaming: () => `<div class="services hrow" id="svcRow"></div>`,
     };
+    const SEC = ["", "YourFlix", "Seasonal genres", "Streaming"];
+    const sections = [0, 1, 2, 3].map(g => layout.filter(k => grp(k) === g)).map((ks, g) => !ks.length ? "" : g === 0 ? ks.map(k => part[k]?.() || "").join("")
+      : `<section class="hgrp" data-g="${g}"><h2 class="hsec">${SEC[g] === "YourFlix" ? `Your<span class="dot">Flix</span>` : SEC[g]}</h2>${ks.map(k => part[k]?.() || "").join("")}</section>`);
     $("#homeBody").innerHTML = `<div class="nfchips"><button data-home-all="tv">Shows</button><button data-home-all="movie">Movies</button><button data-goto="browse">Categories</button></div>` +
-      layout.map(k => part[k]?.() || "").join("") +
+      sections.join("") +
       (layout.length ? "" : `<p class="empty">Your Home is empty. Choose what goes here in You → Account → Home layout.</p>`) +
       `<div style="margin-top:26px"><button class="btn wide gray" data-goto="search">Search movies &amp; shows</button></div>`;
     $$("[data-home-all]").forEach(b => b.onclick = () => nav({tab: "home", view: b.dataset.homeAll}));
@@ -1585,6 +1646,14 @@ async function loadHome() {
     if (layout.includes("foryou")) api("/home/foryou").then(f => {
       if ($("#forYou")) $("#forYou").innerHTML = f.rows.map(r => row(esc(r.title), r.items)).join("");
     }).catch(() => {});
+    if (layout.includes("shelves")) api("/shelves", {quiet: true}).then(d => {
+      if ($("#shelfRow")) $("#shelfRow").innerHTML = d.shelves.map(shelfTile).join("");
+    }).catch(() => $("#shelfRow")?.remove());
+    if (layout.includes("streaming")) api("/browse/providers", {quiet: true}).then(b => {
+      if ($("#svcRow") && b.enabled) $("#svcRow").innerHTML = b.providers.map(p => `<button class="svc" data-prov="${p.id}">
+        ${p.logo ? `<img data-src="${esc(p.logo)}" alt="">` : `<div class="ph"></div>`}<span>${esc(p.name)}</span></button>`).join("");
+      else $("#svcRow")?.remove();
+    }).catch(() => $("#svcRow")?.remove());
     if (layout.includes("trending")) api("/browse/providers").then(b => {
       if ($("#trendRow") && b.enabled && b.trending.length) $("#trendRow").innerHTML = `<h2>Top 10 this week</h2>
         <div class="row top10">${b.trending.slice(0, 10).map((x, i) => `<div class="t10"><span class="t10n" aria-hidden="true">${i + 1}</span>${tile(x)}</div>`).join("")}</div>`;
@@ -4060,7 +4129,8 @@ async function refreshBadge() {
 const HOME_LABELS = {featured: "Featured banner", office: "The Office (live building)", live: "Live TV (channels from your library)", requests: "Your requests", discover: "Swipe & Movie match", foryou: "Because you watched…",
                      movies: "Now playing (movies on the server)", tv: "New episodes", trending: "Top 10 this week",
                      theaters: "In theaters", popular: "Popular movies & shows", upcoming: "Coming to theaters",
-                     genres: "Categories (new ones each day)"};
+                     genres: "Categories (new ones each day)", shelves: "Seasonal genres (Kids, Christmas, Horror…)",
+                     streaming: "Streaming services"};
 function homeLayoutHTML() {
   if (NATIVE()) HOME_LABELS.live = "Live TV (on Apple TV and the website)";
   const on = ME.prefs?.home || [], rows = [...on, ...Object.keys(HOME_LABELS).filter(k => !on.includes(k))];

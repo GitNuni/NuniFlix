@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 import random
 
-import accounts, apns, arr, channels, history, library, media, notify, office, player, seasonal, store, subtitles, tmdb
+import accounts, apns, arr, channels, history, library, media, notify, office, player, seasonal, shelves, store, subtitles, tmdb
 
 VERSION = "0.4.0"
 COOKIE = "nf_token"
@@ -417,7 +417,7 @@ class Prefs(BaseModel):
     push: Optional[bool] = None
     discord: Optional[bool] = None
     auto_next: Optional[bool] = None
-    home: Optional[list[str]] = Field(None, max_length=10)  # Home rows, in order
+    home: Optional[list[str]] = Field(None, max_length=16)  # Home rows, in order
     autoplay: Optional[bool] = None  # trailers play by themselves (muted) on title pages and the featured banner
     season: Optional[bool] = None  # seasonal background (leaves, snow, the odd horror cameo): web/season.js
     theme: Optional[Literal["nuniflix", "repertory", "premiere", "nunitech", "blockbuster", "retro", "atomic", "horror", "pixel"]] = None
@@ -428,7 +428,7 @@ def set_prefs(body: Prefs, user=Depends(current_user)):
     p = store.prefs(user) | {k: v for k, v in body.model_dump().items() if v is not None}
     if body.home is not None:
         p["home"] = [r for r in dict.fromkeys(body.home) if r in store.HOME_ROWS]
-        p["home_v"] = 5
+        p["home_v"] = 6
     store.run("update users set prefs=? where id=?", (json.dumps(p), user["id"]))
     return {"prefs": p}
 
@@ -613,6 +613,23 @@ def seasonal_channel(hour: Optional[int] = Query(None, ge=0, le=23),
     if not tmdb.key():
         raise HTTPException(400, "Seasonal channels need a TMDB key (Settings).")
     d = seasonal.channel(user, season, hour)
+    for r in d["rows"]:
+        _overlay_requests(r["items"])
+    return d
+
+
+# ---------- shelves: permanent themed tiles (shelves.py) ----------
+@app.get("/api/shelves")
+def shelves_list(user=Depends(current_user)):
+    """Kids, Christmas, Halloween, Horror...: the tiles, in-season ones first."""
+    return {"shelves": shelves.listing()}
+
+
+@app.get("/api/shelves/{key}")
+def shelf_page(key: str = Path(pattern=r"^[a-z]{1,20}$"), user=Depends(current_user)):
+    if key not in shelves.SHELVES:
+        raise HTTPException(404, "No such shelf.")
+    d = shelves.page(key, user)
     for r in d["rows"]:
         _overlay_requests(r["items"])
     return d

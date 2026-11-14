@@ -71,6 +71,7 @@ struct MainView: View {
                     case .section(let p, let title, let type, let cat): SectionPage(provider: p, title: title, type: type, cat: cat)
                     case .yourflix: YourFlixView()
                     case .seasonal: SeasonalPage()
+                    case .shelf(let s): ShelfPage(shelf: s)
                     case .office: OfficeView()
                     case .live: LiveGuideView()
                     case .library(let genre): LibraryPage(genre: genre)
@@ -81,7 +82,9 @@ struct MainView: View {
         .task { await model.loadMe() }
         #if DEBUG
         .onAppear { if ProcessInfo.processInfo.environment["NF_ROUTE"] == "office" { path.append(Route.office) }
-                              if ProcessInfo.processInfo.environment["NF_ROUTE"] == "live" { path.append(Route.live) } }  // simulator previews only
+                              if ProcessInfo.processInfo.environment["NF_ROUTE"] == "live" { path.append(Route.live) }
+                              if let r = ProcessInfo.processInfo.environment["NF_ROUTE"], r.hasPrefix("shelf:") {
+                                  let k = String(r.dropFirst(6)); path.append(Route.shelf(Shelf(key: k, title: k.capitalized, art: "/shelves/\(k).png"))) } }  // simulator previews only
         #endif
         .onOpenURL { url in  // nuniflix://item/movie/603 (Top Shelf)
             let parts = url.pathComponents.filter { $0 != "/" }

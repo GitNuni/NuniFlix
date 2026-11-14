@@ -413,8 +413,9 @@ def perms(u):
     return {**PERM_DEFAULTS, **json.loads(u.get("perms") or "{}")}
 
 
-HOME_ROWS = ("featured", "requests", "office", "live", "discover", "foryou", "movies", "tv", "trending", "theaters", "popular", "upcoming", "genres")
-HOME_DEFAULT = ["featured", "requests", "office", "live", "movies", "trending", "discover", "theaters", "popular", "upcoming", "tv", "genres"]
+HOME_ROWS = ("featured", "requests", "office", "live", "discover", "foryou", "movies", "tv", "trending", "theaters", "popular", "upcoming",
+             "genres", "shelves", "streaming")
+HOME_DEFAULT = ["featured", "requests", "office", "live", "movies", "tv", "shelves", "streaming", "trending", "discover", "theaters", "popular", "upcoming", "genres"]
 HOME_V3 = ["theaters", "popular", "upcoming", "genres"]  # the "find something new" rows
 
 
@@ -430,6 +431,8 @@ def prefs(u):
     if p.get("home_v", 1) < 5 and "live" not in p["home"]:  # Live TV goes under the Office card
         at = p["home"].index("office") + 1 if "office" in p["home"] else 0
         p["home"] = [*p["home"][:at], "live", *p["home"][at:]]
+    if p.get("home_v", 1) < 6:  # the sectioned Home: Seasonal genres (shelves) and the Streaming services join in
+        p["home"] = [*p["home"], *[k for k in ("shelves", "streaming") if k not in p["home"]]]
     return p
 
 

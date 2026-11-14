@@ -7,6 +7,18 @@ struct ServicesView: View {
     @State private var error: String?
     @State private var loaded = false
     @State private var settings = false
+    @State private var shelves: [Shelf] = []
+
+    /// A heading over a grid of tiles: YourFlix, Seasonal genres, Streaming.
+    private func section<C: View>(_ title: String, @ViewBuilder _ tiles: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: Metrics.spacing / 2) {
+            model.appTheme.heading(title)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing)], spacing: Metrics.spacing) {
+                tiles()
+            }
+        }
+        .padding(.top, Metrics.spacing / 2)
+    }
 
     var body: some View {
         ScrollView {
@@ -24,20 +36,35 @@ struct ServicesView: View {
                      ?? "What do you feel like watching?")
                     .font(.title3).foregroundStyle(.secondary)
 
-                if let error {
-                    ErrorView(message: error) { Task { await load() } }
-                } else if loaded && providers.isEmpty {
-                    ErrorView(message: "Browsing by service needs a TMDB key. The owner can add one in NuniFlix → Settings.")
-                } else if !loaded {
-                    ProgressView().frame(maxWidth: .infinity, minHeight: 300)
-                }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: Metrics.serviceTile.width), spacing: Metrics.spacing)], spacing: Metrics.spacing) {
+                section("YourFlix") {
                     NavigationLink(value: Route.yourflix) { YourFlixTile() }.cardButton()
                     NavigationLink(value: Route.live) { LiveTile() }.cardButton()
                     NavigationLink(value: Route.seasonal) { SeasonalTile() }.cardButton()
                     NavigationLink(value: Route.office) { OfficeTile(brand: model.brand) }.cardButton()
-                    ForEach(providers) { p in
-                        NavigationLink(value: Route.service(p)) { ServiceTile(provider: p) }.cardButton()
+                }
+                if !shelves.isEmpty {
+                    section("Seasonal genres") {
+                        ForEach(shelves) { s in
+                            NavigationLink(value: Route.shelf(s)) { ShelfTile(shelf: s) }.cardButton()
+                        }
+                    }
+                }
+                if !providers.isEmpty {
+                    section("Streaming") {
+                        ForEach(providers) { p in
+                            NavigationLink(value: Route.service(p)) { ServiceTile(provider: p) }.cardButton()
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: Metrics.spacing / 2) {
+                        model.appTheme.heading("Streaming")
+                        if let error {
+                            ErrorView(message: error) { Task { await load() } }
+                        } else if loaded {
+                            ErrorView(message: "Browsing by service needs a TMDB key. The owner can add one in NuniFlix → Settings.")
+                        } else {
+                            ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+                        }
                     }
                 }
             }
@@ -61,10 +88,12 @@ struct ServicesView: View {
     }
 
     private func load() async {
+        async let sh: ShelfList? = try? API.shared.get("/shelves")
         do {
             let p: Providers = try await API.shared.get("/browse/providers")
             providers = p.providers; error = nil
         } catch { self.error = error.localizedDescription }
+        shelves = await sh?.shelves ?? []
         loaded = true
     }
 }
