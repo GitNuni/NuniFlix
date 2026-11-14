@@ -8,11 +8,11 @@ the few minutes in between are the channel's ident.
 
 Watching live doesn't touch resume points or watched status (player.start(live=True) sends no progress to Plex/Jellyfin).
 """
-import concurrent.futures, math, random, threading, time
+import concurrent.futures, datetime, math, random, threading, time
 
 import httpx
 
-import arr, library, player, store
+import arr, host, library, player, store
 
 WEEK = 7 * 86400
 EPOCH = 1704704400  # Monday 8 Jan 2024 09:00 UTC: weeks turn over early morning in the Americas, mid-morning in Europe
@@ -148,11 +148,11 @@ def _ceil(t):
     return math.ceil(t / PAD) * PAD
 
 
-def _lay(ch, pool, week, start):
+def _lay(ch, pool, week, start, seed=None, stop=None):
     """Programmes for one week from `start`: [(item, start, end, slot_end)]."""
     key, kind = ch[0], ch[3]
-    rng = random.Random(f"{key}:{week}")
-    stop = EPOCH + (week + 1) * WEEK
+    rng = random.Random(seed or f"{key}:{week}")
+    stop = stop or EPOCH + (week + 1) * WEEK
     out, t = [], start
     if kind == "movie":
         order, last = [], None
@@ -211,7 +211,100 @@ def _week(user, ch, week):
     return progs
 
 
-def _programs(user, ch, t0, t1):
+# ---------- takeovers: special days on Fright Night ----------
+# key: (name, tagline, TMDB keywords). Fright Night plays only the matching horror from the library that day (all of
+# its horror if fewer than 4 match), under the takeover's name, from local midnight to midnight.
+TAKEOVERS = {
+    "halloween": ("Halloween Night", "All day. All night. No tricks. Well, some tricks.", ["halloween"]),
+    "krampus": ("Krampusnacht", "Be good. He's checking.", ["krampus", "christmas"]),
+    "xmaseve": ("Slay Bells", "Christmas Eve, and something is stirring", ["christmas"]),
+    "valentine": ("Love Bites", "Valentine's Day, horror style", ["valentine's day", "obsession", "stalker"]),
+    "friday13": ("Friday the 13th", "Stay out of the woods", ["slasher", "summer camp"]),
+    "fullmoon": ("Full Moon", "Werewolves on the hour", ["werewolf"]),
+}
+SYNODIC, NEW_MOON = 29.530588853, 947182440  # a new moon: 6 Jan 2000 18:14 UTC
+
+
+def full_moon(d):
+    """Is the moon (near) full on this date? Within ~a day of it, at local midday."""
+    t = datetime.datetime(d.year, d.month, d.day, 12, tzinfo=datetime.timezone.utc).timestamp()
+    age = ((t - NEW_MOON) / 86400) % SYNODIC
+    return abs(age - SYNODIC / 2) < 1.0
+
+
+def takeover_for(d):
+    if (d.month, d.day) == (10, 31):
+        return "halloween"
+    if (d.month, d.day) == (12, 5):
+        return "krampus"
+    if (d.month, d.day) == (12, 24):
+        return "xmaseve"
+    if d.day == 13 and d.weekday() == 4:
+        return "friday13"
+    if (d.month, d.day) == (2, 14):
+        return "valentine"
+    if full_moon(d):
+        return "fullmoon"
+    return None
+
+
+def _local_date(now, tz):
+    return datetime.datetime.fromtimestamp(now + tz * 60, datetime.timezone.utc).date()
+
+
+def _keyword_hits(words):
+    """TMDB ids of horror films with any of these keywords (a few pages, kept a day)."""
+    import seasonal, tmdb
+    if not tmdb.key():
+        return set()
+    ids = [str(k) for k in (seasonal._keyword(w) for w in words) if k]
+    if not ids:
+        return set()
+
+    def load():
+        out = set()
+        for page in range(1, 6):
+            d = tmdb.get("/discover/movie", with_genres="27", with_keywords="|".join(ids), sort_by="popularity.desc",
+                         include_adult="false", page=page)
+            out |= {r["id"] for r in d.get("results", [])}
+            if page >= d.get("total_pages", 1):
+                break
+        return sorted(out)
+    return set(arr.cached("live:kw:" + "|".join(ids), 86400, load))
+
+
+def _takeover_programs(user, ch, tk, now, tz, t0, t1):
+    src, token, _ = player._access(user)
+    d = _local_date(now, tz)
+    ck = (src, token[-8:], "takeover", tk, d.isoformat(), tz)
+    with _sched_lock:
+        hit = _sched.get(ck)
+    if hit and hit[0] > time.time():
+        progs = hit[1]
+    else:
+        pool = _pool(user, ch, int((now - EPOCH) // WEEK))
+        try:
+            hits = _keyword_hits(TAKEOVERS[tk][2])
+        except Exception:  # TMDB down: the whole horror pool, renamed
+            hits = set()
+        matched = [x for x in pool if x.get("tmdb") in hits]
+        use = matched if len(matched) >= 4 else pool
+        midnight = datetime.datetime(d.year, d.month, d.day, tzinfo=datetime.timezone.utc).timestamp() - tz * 60
+        progs = _lay(ch, use, 0, midnight, seed=f"{ch[0]}:{tk}:{d}", stop=midnight + 36 * 3600) if len(use) >= 2 else []
+        with _sched_lock:
+            _sched[ck] = (time.time() + 3600, progs)
+    return [p for p in progs if p[3] > t0 and p[1] < t1]
+
+
+def _programs(user, ch, t0, t1, tz=None, now=None):
+    """Programmes overlapping [t0, t1). On a takeover day (local date from tz), Fright Night plays the takeover."""
+    if tz is not None and ch[0] == "fright":
+        now = now or time.time()
+        tk = takeover_for(_local_date(now, tz))
+        if tk:
+            progs = _takeover_programs(user, ch, tk, now, tz, t0, t1)
+            if progs:
+                return progs
     week = int((t0 - EPOCH) // WEEK)
     progs = _week(user, ch, week)
     if progs and progs[-1][3] < t1:
@@ -225,15 +318,16 @@ def _shape(p):
         "start": start, "end": end, "slot_end": slot}
 
 
-def lineup(user, hours=4):
+def lineup(user, hours=4, tz=None):
     """{now, source, channels: [{key, number, name, tagline, kind, programs}]}: what's on from the top of this half hour
     to a few hours ahead (so the first programme may have finished already)."""
     src = player._access(user)[0]
     now = time.time()
+    tk = takeover_for(_local_date(now, tz)) if tz is not None else None
 
     def one(ch):
         try:
-            return ch, _programs(user, ch, now // 1800 * 1800, now + hours * 3600)  # from the top of the half hour, for the guide
+            return ch, _programs(user, ch, now // 1800 * 1800, now + hours * 3600, tz, now)  # from the top of the half hour, for the guide
         except (httpx.HTTPError, ValueError, KeyError, IndexError):
             return ch, None
     with concurrent.futures.ThreadPoolExecutor(6) as ex:
@@ -243,14 +337,23 @@ def lineup(user, hours=4):
     out, n = [], 2
     for ch, progs in results:
         if progs:
-            out.append({"key": ch[0], "number": n, "name": ch[1], "tagline": ch[2], "kind": ch[3], "programs": [_shape(p) for p in progs]})
+            name, tagline, takeover = ch[1], ch[2], None
+            if tk and ch[0] == "fright":
+                name, tagline, takeover = TAKEOVERS[tk][0], TAKEOVERS[tk][1], tk
+            out.append({"key": ch[0], "number": n, "name": name, "tagline": tagline, "kind": ch[3], "takeover": takeover,
+                        "programs": [_shape(p) for p in progs]})
             n += 1
     if not out:
         raise NoChannels(f"Not enough on your {store.SOURCES[src]} to make channels yet.")
-    return {"now": now, "source": src, "channels": out}
+    hour = _local_hour(now, tz)
+    return {"now": now, "source": src, "channels": out, "takeover": tk, "host": host.greeting(hour, tk)}
 
 
-def tune(user, key):
+def _local_hour(now, tz):
+    return datetime.datetime.fromtimestamp(now + tz * 60, datetime.timezone.utc).hour if tz is not None else None
+
+
+def tune(user, key, tz=None):
     """What's on a channel right now: {program, offset, next}. offset is seconds into it; negative means it starts in
     that many seconds (the ident between programmes)."""
     ch = next((c for c in CHANNELS if c[0] == key), None)
@@ -258,7 +361,7 @@ def tune(user, key):
         raise player.PlayError("No such channel.")
     now = time.time()
     try:
-        progs = _programs(user, ch, now, now + 6 * 3600)
+        progs = _programs(user, ch, now, now + 6 * 3600, tz, now)
     except (httpx.HTTPError, ValueError, KeyError, IndexError):
         raise player.PlayError(f"Couldn't reach {store.SOURCES[player._access(user)[0]]} right now.")
     if not progs:
@@ -267,4 +370,9 @@ def tune(user, key):
     if cur[2] <= now and len(progs) > 1:  # between programmes: the next one is about to start
         cur = progs[1]
     nxt = progs[progs.index(cur) + 1] if progs.index(cur) + 1 < len(progs) else None
-    return {"now": now, "program": _shape(cur), "offset": now - cur[1], "next": _shape(nxt) if nxt else None}
+    tk = takeover_for(_local_date(now, tz)) if tz is not None and key == "fright" else None
+    name = TAKEOVERS[tk][0] if tk else ch[1]
+    offset = now - cur[1]
+    return {"now": now, "program": _shape(cur), "offset": offset, "next": _shape(nxt) if nxt else None,
+            "channel": {"key": key, "name": name, "tagline": TAKEOVERS[tk][1] if tk else ch[2], "takeover": tk},
+            "host": host.line(_shape(cur), name, _local_hour(now, tz), offset, tk)}

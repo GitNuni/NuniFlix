@@ -589,15 +589,16 @@ def play_start(body: PlayStart, user=Depends(current_user)):
 
 # ---------- live channels (channels.py) ----------
 @app.get("/api/live")
-def live_lineup(hours: int = Query(4, ge=1, le=12), user=Depends(current_user)):
-    """The channels made from this person's library and what's on them now and for the next few hours."""
-    return channels.lineup(user, hours)
+def live_lineup(hours: int = Query(4, ge=1, le=12), tz: Optional[int] = Query(None, ge=-840, le=840), user=Depends(current_user)):
+    """The channels made from this person's library and what's on them now and for the next few hours.
+    tz: the viewer's offset from UTC in minutes (east positive), for takeover days and the host's mood."""
+    return channels.lineup(user, hours, tz)
 
 
 @app.get("/api/live/{key}")
-def live_tune(key: str = Path(pattern=r"^[a-z0-9]{1,20}$"), user=Depends(current_user)):
-    """What's on one channel right now, and how far into it (to tune in part-way)."""
-    return channels.tune(user, key)
+def live_tune(key: str = Path(pattern=r"^[a-z0-9]{1,20}$"), tz: Optional[int] = Query(None, ge=-840, le=840), user=Depends(current_user)):
+    """What's on one channel right now, how far into it (to tune in part-way), and what the host says."""
+    return channels.tune(user, key, tz)
 
 
 # ---------- seasonal horror channel (seasonal.py) ----------

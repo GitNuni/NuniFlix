@@ -900,7 +900,25 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 .player .lv-ident .up{margin-top:22px;font:700 12px ui-monospace,Menlo,monospace;color:#5ce1ff;letter-spacing:.08em}
 .player .lv-ident .t{font-size:20px;font-weight:800}
 .player .lv-ident .cd{font:600 15px ui-monospace,Menlo,monospace;color:rgba(255,255,255,.7)}
-.ofc.lvc{background:linear-gradient(135deg,#0a1034,#24308c)}
+.ofc.lvc{background:linear-gradient(135deg,#0a1034,#24308c);position:relative;overflow:hidden}
+.ofc.lvc .lv-host{position:absolute;right:30px;bottom:-6px;width:84px;height:84px;image-rendering:pixelated;pointer-events:none}
+.ofc.lvc .ofc-txt{padding-right:80px}
+.lv-tk{display:inline-block;font:900 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.06em;background:#e50914;color:#fff;padding:3px 5px;border-radius:3px;margin-left:6px;vertical-align:2px}
+.live .lv-ch.tk .lv-name{color:#ff5468}
+.live .lv-hosthd{display:flex;align-items:flex-end;gap:10px;max-width:760px;margin:6px auto 0;padding:0 12px}
+.live .lv-hosthd .spr{width:96px;height:96px;flex:none}
+.bubble{background:#fff;color:#111;border-radius:14px;padding:10px 13px;font-size:15px;font-weight:600;line-height:1.3;position:relative;margin-bottom:22px}
+.bubble::after{content:"";position:absolute;left:-7px;bottom:12px;border:8px solid transparent;border-right-color:#fff;border-left:0}
+.live .lv-ch.pv{border-color:#5ce1ff;box-shadow:0 0 0 2px #5ce1ff inset}
+.spr{image-rendering:pixelated;background-repeat:no-repeat;background-size:auto 100%}
+.player .lv-hostrow{position:absolute;left:14px;bottom:150px;display:flex;align-items:flex-end;gap:8px;max-width:min(520px,calc(100% - 28px));pointer-events:none;transition:opacity .5s}
+.player .lv-hostrow .spr{width:110px;height:110px;flex:none}
+.player .lv-ident .lv-hostrow{position:static;margin-top:18px}
+.player .lv-static{position:absolute;inset:0;z-index:3;pointer-events:none;image-rendering:pixelated;width:100%;height:100%}
+.player .lv-standby{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;pointer-events:none;
+  background:linear-gradient(90deg,#c0c0c0 0 14.3%,#c0c000 0 28.6%,#00c0c0 0 42.9%,#00c000 0 57.1%,#c000c0 0 71.4%,#c00000 0 85.7%,#0000c0 0)}
+.player .lv-standby div{background:rgba(0,0,0,.85);color:#fff;text-align:center;padding:16px 22px;border-radius:6px;font:900 22px/1.2 ui-monospace,Menlo,monospace}
+.player .lv-standby small{display:block;font-weight:500;font-size:13px;margin-top:6px}
 .office{position:fixed;inset:0;z-index:25;overflow-y:auto;overscroll-behavior:contain;color:#f3eefc;
   background:linear-gradient(180deg,#070a1c 0,#141a3a 420px,#1d1838 1000px,#17131f);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
   padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
@@ -1475,7 +1493,7 @@ async function loadHome() {
       featured: () => `<div class="bbs" id="bb" hidden></div>`,
       office: () => `<button class="ofc" id="ofCard" data-open-office><span class="ofc-bld ofc-win" aria-hidden="true">${"<i></i>".repeat(9)}</span>
         <span class="ofc-txt"><b>${esc(APP())} HQ</b><span class="ofc-live">LIVE</span><div class="ofc-sum">Peek inside the building</div></span><span class="chev">›</span></button>`,
-      live: () => `<button class="ofc lvc" data-open-live><span class="ofc-txt"><b><span class="lv-dot"></span>Live TV</b>
+      live: () => `<button class="ofc lvc" data-open-live><img class="lv-host" src="/host/${hostMood()}.png" alt=""><span class="ofc-txt"><b><span class="lv-dot"></span>Live TV</b>
         <div class="ofc-sum" id="lvSum">Channels made from your library. Tune in to whatever's on.</div></span><span class="chev">›</span></button>`,
       discover: () => f.swipe || f.match ? `<div class="ctas">${f.swipe ? `<button class="cta" data-open-swipe><span class="ico">♥</span><span><b>Swipe</b><small>Trailers, one after another. Right to ${esc(W("request").toLowerCase())}.</small></span></button>` : ""}
         ${f.match ? `<button class="cta alt" data-open-match><span class="ico">⚡</span><span><b>Movie match</b><small>Send someone a link. Swipe until you both like one.</small></span></button>` : ""}</div>` : "",
@@ -1494,9 +1512,9 @@ async function loadHome() {
     const browse = ["featured", "theaters", "popular", "upcoming", "genres"].some(k => layout.includes(k))
       ? api("/home/discover", {quiet: true}).catch(() => ({rows: [], hero: null})) : null;
     if (layout.includes("office")) fillOfficeCard();
-    if (layout.includes("live")) api("/live?hours=1", {quiet: true}).then(d => {
+    if (layout.includes("live")) api(`/live?hours=1&tz=${lvTZ()}`, {quiet: true}).then(d => {
       const c = d.channels[0], p = c && lvNow(c);
-      if (p && $("#lvSum")) $("#lvSum").textContent = `${d.channels.length} channels · On ${c.name} now: ${p.show || p.title}`;
+      if (p && $("#lvSum")) $("#lvSum").textContent = d.takeover ? `Tonight: the ${c.name} takeover · ${p.show || p.title} is on` : `${d.channels.length} channels · On ${c.name} now: ${p.show || p.title}`;
     }).catch(() => { $("[data-open-live]")?.remove(); });
     if (layout.includes("featured")) browse.then(d => fillFeatured(d.heroes || (d.hero ? [d.hero] : []), h.recent_movies));
     if (browse) browse.then(d => $$("#homeBody .hd").forEach(el => {
@@ -3431,7 +3449,54 @@ async function plStopStream(beacon) {
 /* ---------- Live TV (server: channels.py) ----------
    The guide lists each channel with what's on and what's next; tapping one opens the player part-way into whatever it's
    showing. ▲/▼ in the player (or the arrow keys) flip channels; when a show ends the channel carries on by itself. */
-const LV = {lineup: null, timer: null, tune: 0};
+const LV = {lineup: null, timer: null, tune: 0, idle: 0, pv: -1};
+const lvTZ = () => -new Date().getTimezoneOffset();  // minutes east of UTC: the server works out takeover days and Vesper's mood
+/* Vesper, the host (server: host.py). Same hours as the server: friendly by day, sly in the evening, evil in Horror Hours. */
+const hostMood = () => { const h = new Date().getHours(); return h >= 6 && h < 17 ? "day" : (h >= 17 && h < 22) || (h >= 4 && h < 6) ? "dusk" : "evil"; };
+function hostHTML(h, talk = true) {
+  return `<div class="lv-hostrow"><div class="spr" data-mood="${esc(h.mood)}" data-talk="${talk ? h.line.length * 45 + 600 : 0}"></div>
+    <div class="bubble" data-type="${esc(h.line)}"></div></div>`;
+}
+function hostRun(root) {  // her mouth moves while the words type out
+  root.querySelectorAll(".spr[data-mood]").forEach(el => {
+    const m = el.dataset.mood, until = Date.now() + +el.dataset.talk, seq = [0, 1, 2, 3, 4, 3, 2, 1];
+    el.style.backgroundImage = `url(/host/${m}-talk.png)`; el.style.backgroundSize = "500% 100%";
+    let n = 0;
+    const tick = () => {
+      if (!el.isConnected) return;
+      if (Date.now() > until) { el.style.backgroundImage = `url(/host/${m}.png)`; el.style.backgroundSize = "100% 100%"; el.style.backgroundPosition = "0 0"; return; }
+      el.style.backgroundPosition = `${seq[n++ % 8] * 25}% 0`;
+      setTimeout(tick, 110);
+    };
+    tick();
+  });
+  root.querySelectorAll(".bubble[data-type]").forEach(el => {
+    const text = el.dataset.type; let i = 0;
+    el.style.minHeight = ""; el.textContent = text; el.style.minHeight = el.offsetHeight + "px"; el.textContent = "";  // keep its size while typing
+    const t = setInterval(() => { if (!el.isConnected || i >= text.length) return clearInterval(t); el.textContent = text.slice(0, ++i); }, 45);
+  });
+}
+/* retro touches: a burst of static when changing channel, and "Please stand by" when the picture stalls */
+function lvStatic() {
+  const stage = $("#player .pl-body");
+  if (!stage) return;
+  const c = document.createElement("canvas"); c.className = "lv-static"; c.width = 160; c.height = 90;
+  stage.style.position = "relative"; stage.appendChild(c);
+  const x = c.getContext("2d"), img = x.createImageData(160, 90), end = Date.now() + 600;
+  const draw = () => {
+    if (Date.now() > end || !c.isConnected) return c.remove();
+    for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255 | 0; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+    x.putImageData(img, 0, 0); requestAnimationFrame(draw);
+  };
+  draw();
+}
+function lvStandBy(v) {
+  let t = null;
+  const show = on => { const st = v.closest(".pl-stage"); if (!st) return; st.querySelector(".lv-standby")?.remove();
+    if (on) st.insertAdjacentHTML("beforeend", `<div class="lv-standby"><div>PLEASE STAND BY<small>We'll be right back.</small></div></div>`); };
+  v.addEventListener("waiting", () => { clearTimeout(t); t = setTimeout(() => show(true), 1500); });
+  ["playing", "seeked", "canplay"].forEach(e => v.addEventListener(e, () => { clearTimeout(t); show(false); }));
+}
 const lvHM = t => new Date(t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
 const lvNow = c => c.programs.find(p => p.slot_end > Date.now() / 1000);
 const lvLabel = p => p.show ? `${p.show}: ${p.title || ""}` : (p.title || "");
@@ -3446,26 +3511,37 @@ async function openLive() {
   if (LV.autotune && LV.lineup?.channels.some(c => c.key === LV.autotune)) lvTune(LV.autotune);
   LV.autotune = null;
   LV.timer = setInterval(() => { if (!document.hidden && !$("#player")) lvLoad(); }, 60000);
+  LV.idle = Date.now();
+  ["pointerdown", "keydown", "wheel", "touchstart"].forEach(e => el.addEventListener(e, () => { LV.idle = Date.now(); $$("#lvList .pv").forEach(b => b.classList.remove("pv")); }, {passive: true}));
+  LV.pvTimer = setInterval(() => {  // left alone, the guide flips through the channels like the old preview channel
+    if (document.hidden || $("#player") || Date.now() - LV.idle < 20000) return;
+    const all = $$("#lvList .lv-ch"); if (!all.length) return;
+    all.forEach(b => b.classList.remove("pv"));
+    LV.pv = (LV.pv + 1) % all.length;
+    all[LV.pv].classList.add("pv"); all[LV.pv].scrollIntoView({behavior: "smooth", block: "center"});
+  }, 5000);
 }
 function closeLive() {
   const el = $("#live");
   if (el.hidden) return;
-  clearInterval(LV.timer); LV.timer = null;
+  clearInterval(LV.timer); LV.timer = null; clearInterval(LV.pvTimer);
   if (PL.live) plClose();
   el.hidden = true; el.innerHTML = ""; document.body.style.overflow = "";
 }
 async function lvLoad() {
-  try { LV.lineup = await api("/live?hours=4", {quiet: true}); }
+  try { LV.lineup = await api(`/live?hours=4&tz=${lvTZ()}`, {quiet: true}); }
   catch (e) { if ($("#lvList")) $("#lvList").innerHTML = `<p class="lv-note">${esc(e.message)}</p>`; return; }
   if (!$("#lvList")) return;
   const now = Date.now() / 1000;
   $("#lvClock").textContent = lvHM(now);
+  const h = LV.lineup.host;
+  if (h && !$("#lvHost")) { $("#lvList").insertAdjacentHTML("beforebegin", `<div class="lv-hosthd" id="lvHost">${hostHTML(h).replace(/^<div class="lv-hostrow">|<\/div>$/g, "")}</div>`); hostRun($("#lvHost")); }
   $("#lvList").innerHTML = LV.lineup.channels.map(c => {
     const p = lvNow(c), n = p && c.programs[c.programs.indexOf(p) + 1], on = p && p.start <= now;
     const pct = on ? Math.min(100, (now - p.start) / (p.end - p.start) * 100) : 0;
-    return `<button class="lv-ch" data-ch="${esc(c.key)}"><span class="lv-no">${c.number}</span>
+    return `<button class="lv-ch${c.takeover ? " tk" : ""}" data-ch="${esc(c.key)}"><span class="lv-no">${c.number}</span>
       ${p?.backdrop || p?.poster ? `<img src="${esc(p.backdrop || p.poster)}" alt="" loading="lazy">` : ""}
-      <span class="lv-body"><span class="lv-name">${esc(c.name)}</span>
+      <span class="lv-body"><span class="lv-name">${esc(c.name)}${c.takeover ? `<span class="lv-tk">TAKEOVER</span>` : ""}</span>
         <div class="lv-now">${p ? esc(lvLabel(p)) : "Off air"}</div>
         <div class="lv-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
         <div class="lv-next">${p ? (on ? `until ${lvHM(p.end)}` : `starts ${lvHM(p.start)}`) : ""}</div>${n ? `<div class="lv-next">Next: ${esc(n.show || n.title || "")} · ${lvHM(n.start)}</div>` : ""}</span></button>`;
@@ -3485,17 +3561,21 @@ async function lvTune(key) {
     document.addEventListener("keydown", lvKey);
   } else if (ch) $("#player .pl-top b").textContent = `${ch.number}  ${ch.name}`;
   PL.live = key; clearTimeout(PL.lvTimer);
+  lvStatic();
   await plStopStream();
   let t;
-  try { t = await api(`/live/${key}`); } catch (e) { if (me === LV.tune) plBody().innerHTML = `<p class="pl-msg">${esc(e.message)}</p>`; return; }
+  try { t = await api(`/live/${key}?tz=${lvTZ()}`); } catch (e) { if (me === LV.tune) plBody().innerHTML = `<p class="pl-msg">${esc(e.message)}</p>`; return; }
   if (me !== LV.tune || !$("#player")) return;
-  const p = t.program, nx = t.next;
+  const p = t.program, nx = t.next, chName = t.channel?.name || ch?.name || "";
+  if (ch) $("#player .pl-top b").textContent = `${ch.number}  ${chName}`;
   PL.title = {type: p.kind, id: p.ext, title: p.show || p.title};
   const e = {id: p.id, title: lvLabel(p), resume: 0, duration: p.end - p.start, watched: false};
   if (t.offset < 0) {  // between shows: the channel's ident and a countdown
     const at = Date.now() - t.offset * 1000;
-    plBody().innerHTML = `<div class="lv-ident">${ch ? `<div class="big">${ch.number}</div><div class="nm">${esc(ch.name.toUpperCase())}</div><div class="tg">${esc(ch.tagline)}</div>` : ""}
+    plBody().innerHTML = `<div class="lv-ident">${ch ? `<div class="big">${ch.number}</div><div class="nm">${esc(chName.toUpperCase())}${t.channel?.takeover ? `<span class="lv-tk">TAKEOVER</span>` : ""}</div><div class="tg">${esc(t.channel?.tagline || ch.tagline)}</div>` : ""}
+      ${t.host ? hostHTML(t.host) : ""}
       <div class="up">UP NEXT</div><div class="t">${esc(lvLabel(p))}</div><div class="cd" id="lvCd"></div></div>`;
+    hostRun(plBody());
     while (Date.now() < at) {
       if (me !== LV.tune || !$("#lvCd")) return;
       const s = Math.ceil((at - Date.now()) / 1000);
@@ -3507,10 +3587,12 @@ async function lvTune(key) {
   if (me !== LV.tune) return;
   const stage = $("#player .pl-stage");
   if (!stage) return;
-  stage.insertAdjacentHTML("beforeend", `${ch ? `<div class="lv-bug">${ch.number} ${esc(ch.name.toUpperCase())}</div>` : ""}
+  lvStandBy(stage.querySelector("video"));
+  if (t.host) { stage.insertAdjacentHTML("beforeend", hostHTML(t.host)); hostRun(stage); }
+  stage.insertAdjacentHTML("beforeend", `${ch ? `<div class="lv-bug">${ch.number} ${esc(chName.toUpperCase())}</div>` : ""}
     <div class="lv-card"><div><em>NOW</em>${esc(lvLabel(p))}<small>until ${lvHM(p.end)}</small></div>
     ${nx ? `<div><em class="n">NEXT</em>${esc(lvLabel(nx))}<small>${lvHM(nx.start)}</small></div>` : ""}</div>`);
-  PL.lvTimer = setTimeout(() => $$("#player .lv-card, #player .lv-bug").forEach(x => x.style.opacity = 0), 7000);
+  PL.lvTimer = setTimeout(() => $$("#player .lv-card, #player .lv-bug, #player .lv-hostrow").forEach(x => x.style.opacity = 0), 7000 + (t.host?.line.length || 0) * 45);
 }
 function lvFlip(step) {
   const chs = LV.lineup?.channels || [], i = chs.findIndex(c => c.key === PL.live);

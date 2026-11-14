@@ -57,6 +57,11 @@ final class Playback: ObservableObject {
     var channels: [LiveChannel] = []
     /// The channel bug and "now / next" card that shows for a few seconds after tuning in, or during the ident.
     @Published var bug: LiveBug?
+    /// Retro touches on live: a burst of static when changing channel, and "Please stand by" while it buffers.
+    @Published var staticBurst = false
+    @Published var standBy = false
+    private var waitObserver: NSKeyValueObservation?
+    private var waitTask: Task<Void, Never>?
     /// The Plex/Jellyfin subtitle track burned in (nil: whatever the server picks; 0: off).
     private(set) var subtitle: Int?
     /// OpenSubtitles text drawn over the picture, and the line showing right now.
@@ -196,13 +201,16 @@ final class Playback: ObservableObject {
         tuneTask += 1
         let me = tuneTask
         channelKey = key
+        staticBurst = true
+        Task { try? await Task.sleep(for: .milliseconds(650)); if me == self.tuneTask { self.staticBurst = false } }
+        watchBuffering()
         await stopStream()
         player.pause()
         subtitle = nil
         setCues([])
         let ch = channels.first { $0.key == key }
         let t: LiveTune
-        do { t = try await API.shared.get("/live/\(key)") } catch {
+        do { t = try await API.shared.get("/live/\(key)", ["tz": liveTZ]) } catch {
             if !(error is CancellationError) { self.error = error.localizedDescription }
             return
         }
@@ -212,14 +220,35 @@ final class Playback: ObservableObject {
         kind = p.kind; extID = p.ext ?? 0
         if t.offset < 0 {  // between programmes: the channel's ident, then it starts
             player.replaceCurrentItem(with: nil)
-            bug = LiveBug(channel: ch, now: p, next: t.next, startsAt: Date(timeIntervalSinceNow: -t.offset))
+            staticBurst = false
+            bug = LiveBug(channel: ch, now: p, next: t.next, startsAt: Date(timeIntervalSinceNow: -t.offset), host: t.host,
+                          name: t.channel?.name, tagline: t.channel?.tagline, takeover: t.channel?.takeover != nil)
             try? await Task.sleep(for: .seconds(-t.offset))
             guard me == tuneTask else { return }
         }
-        let shown = LiveBug(channel: ch, now: p, next: t.next, startsAt: nil)
+        let shown = LiveBug(channel: ch, now: p, next: t.next, startsAt: nil, host: t.host, name: t.channel?.name,
+                            tagline: t.channel?.tagline, takeover: t.channel?.takeover != nil)
         bug = shown
         await start(from: max(0, t.offset))
-        Task { try? await Task.sleep(for: .seconds(7)); if self.bug == shown { self.bug = nil } }
+        let stay = 7 + Double(t.host?.line.count ?? 0) * 0.045
+        Task { try? await Task.sleep(for: .seconds(stay)); if self.bug == shown { self.bug = nil } }
+    }
+
+    /// Live: if the picture stalls for more than a moment, show the stand-by card until it's moving again.
+    private func watchBuffering() {
+        guard waitObserver == nil else { return }
+        waitObserver = player.observe(\.timeControlStatus) { [weak self] p, _ in
+            let waiting = p.timeControlStatus == .waitingToPlayAtSpecifiedRate
+            Task { @MainActor in
+                guard let self else { return }
+                self.waitTask?.cancel()
+                if waiting {
+                    self.waitTask = Task { try? await Task.sleep(for: .seconds(1.5)); if !Task.isCancelled, self.bug?.startsAt == nil { self.standBy = true } }
+                } else {
+                    self.standBy = false
+                }
+            }
+        }
     }
 
     /// Channel up/down.
@@ -358,6 +387,7 @@ final class Playback: ObservableObject {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
         statusObserver = nil
+        waitObserver = nil; waitTask?.cancel(); standBy = false
         setCues([])
         Task { await stopStream(); player.replaceCurrentItem(with: nil) }
     }
@@ -462,10 +492,13 @@ struct CaptionView: View {
 
     var body: some View {
         ZStack {
+            if playback.standBy { StandByCard().transition(.opacity) }
             if let bug = playback.bug { LiveBugView(bug: bug).transition(.opacity) }
             captions
+            if playback.staticBurst { StaticNoise() }
         }
         .animation(.easeInOut(duration: 0.4), value: playback.bug)
+        .animation(.easeInOut(duration: 0.3), value: playback.standBy)
     }
 
     private var captions: some View {

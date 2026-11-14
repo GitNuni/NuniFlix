@@ -8,7 +8,25 @@ struct LiveLineup: Decodable {
     var now: Double
     var source: String
     var channels: [LiveChannel]
+    var takeover: String?
+    var host: HostSays?
 }
+
+/// Vesper, the host (server: host.py): her mood follows the clock (day / dusk / evil) and the line is what she says.
+struct HostSays: Decodable, Hashable {
+    var name: String
+    var mood: String
+    var line: String
+
+    /// Same hours as the server: friendly 6am-5pm, sly until 10pm (and 4-6am), evil in Horror Hours.
+    static var moodNow: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        return (6..<17).contains(h) ? "day" : ((17..<22).contains(h) || (4..<6).contains(h)) ? "dusk" : "evil"
+    }
+}
+
+/// The viewer's offset from UTC in minutes, so the server knows their date (takeovers) and hour (the host's mood).
+let liveTZ = String(TimeZone.current.secondsFromGMT() / 60)
 
 struct LiveChannel: Decodable, Identifiable, Hashable {
     var key: String
@@ -16,6 +34,7 @@ struct LiveChannel: Decodable, Identifiable, Hashable {
     var name: String
     var tagline: String
     var kind: String
+    var takeover: String?
     var programs: [LiveProgram]
     var id: String { key }
     var onNow: LiveProgram? { programs.first { $0.slotEnd > Date().timeIntervalSince1970 } }
@@ -48,6 +67,9 @@ struct LiveTune: Decodable {
     var program: LiveProgram
     var offset: Double
     var next: LiveProgram?
+    var channel: TunedChannel?
+    var host: HostSays?
+    struct TunedChannel: Decodable, Hashable { var key: String; var name: String; var tagline: String; var takeover: String? }
 }
 
 /// What the player shows over the picture for a few seconds after tuning in (or during the ident between shows).
@@ -56,6 +78,10 @@ struct LiveBug: Equatable {
     var now: LiveProgram
     var next: LiveProgram?
     var startsAt: Date?
+    var host: HostSays?
+    var name: String?      // the channel's name today (a takeover renames Fright Night)
+    var tagline: String?
+    var takeover: Bool = false
 }
 
 private func hm(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
@@ -78,9 +104,8 @@ struct LiveTile: View {
             LinearGradient(colors: [Color(hex: 0x0A1034), Color(hex: 0x24308C)], startPoint: .topLeading, endPoint: .bottomTrailing)
             // scanlines
             VStack(spacing: 3) { ForEach(0..<60, id: \.self) { _ in Color.black.opacity(0.18).frame(height: 1) } }
-            Image(systemName: "tv.inset.filled")
-                .font(.system(size: Metrics.serviceTile.height * 0.42)).foregroundStyle(Guide.cyan.opacity(0.35))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(16)
+            HostSprite(mood: HostSays.moodNow, talking: false, size: Metrics.serviceTile.height * 0.95)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).offset(x: 10, y: 8)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Circle().fill(.red).frame(width: 12, height: 12).shadow(color: .red, radius: 6)
@@ -103,6 +128,8 @@ struct LiveGuideView: View {
     @State private var tuned: Tuned?
     @FocusState private var focus: String?
     @State private var shown: (LiveChannel, LiveProgram)?
+    @State private var lastFocus = Date()
+    @State private var previewing = false   // nobody's touched the remote for a while: the preview cycles channels by itself
 
     struct Tuned: Identifiable { let id = UUID(); var key: String }
 
@@ -132,10 +159,21 @@ struct LiveGuideView: View {
                 if tuned == nil { await load() }
             }
         }
+        .task {  // like the old preview channels: left alone, the guide flips through what's on
+            var i = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(6))
+                guard tuned == nil, let chs = lineup?.channels, !chs.isEmpty, Date().timeIntervalSince(lastFocus) > 20 else { previewing = false; continue }
+                previewing = true
+                i = (i + 1) % chs.count
+                if let p = chs[i].onNow { withAnimation(.easeInOut(duration: 0.4)) { shown = (chs[i], p) } }
+            }
+        }
         .fullScreenCover(item: $tuned) { t in
             PlayerScreen(channel: t.key, channels: lineup?.channels ?? [])
         }
         .onChange(of: focus) { _, f in
+            lastFocus = Date(); previewing = false
             guard let f, let lineup else { return }
             let parts = f.split(separator: "|")
             if let ch = lineup.channels.first(where: { $0.key == parts.first.map(String.init) }),
@@ -147,7 +185,7 @@ struct LiveGuideView: View {
 
     private func load() async {
         do {
-            let l: LiveLineup = try await API.shared.get("/live", ["hours": "4"])
+            let l: LiveLineup = try await API.shared.get("/live", ["hours": "4", "tz": liveTZ])
             lineup = l; error = nil
             if shown == nil, let ch = l.channels.first, let p = ch.onNow ?? ch.programs.first { shown = (ch, p) }
             #if DEBUG
@@ -169,8 +207,12 @@ struct LiveGuideView: View {
                     Circle().fill(.red).frame(width: 14, height: 14).shadow(color: .red, radius: 6)
                     Text("LIVE TV").font(Guide.mono(24, .black)).foregroundStyle(.white)
                     Text(hm(now)).font(Guide.mono(24)).foregroundStyle(.white.opacity(0.6))
+                    if previewing { Text("CHANNEL PREVIEW").font(Guide.mono(18, .black)).foregroundStyle(.black).padding(.horizontal, 8).padding(.vertical, 3).background(Guide.cyan) }
                 }
-                Text("\(ch.number)  \(ch.name.uppercased())").font(Guide.mono(26, .heavy)).foregroundStyle(Guide.yellow)
+                HStack(spacing: 12) {
+                    Text("\(ch.number)  \(ch.name.uppercased())").font(Guide.mono(26, .heavy)).foregroundStyle(Guide.yellow)
+                    if ch.takeover != nil { TakeoverPill() }
+                }
                 Text(p.heading).font(.system(size: 52, weight: .heavy)).foregroundStyle(.white).lineLimit(1)
                 Text([p.show != nil ? p.title : nil, p.sub, "\(hm(p.startDate)) – \(hm(p.endDate))",
                       onNow ? "\(max(1, Int(p.end - now.timeIntervalSince1970) / 60)) min left" : nil].compactMap { $0 }.joined(separator: "  ·  "))
@@ -179,6 +221,15 @@ struct LiveGuideView: View {
                     .frame(maxWidth: 980, alignment: .leading)
             }
             Spacer(minLength: 0)
+            if let h = l.host {
+                HostSprite(mood: h.mood, talking: false, size: 170)
+                    .overlay(alignment: .topLeading) {
+                        Text(h.line).font(.system(size: 20, weight: .semibold)).foregroundStyle(.black).lineLimit(3)
+                            .padding(10).frame(width: 260, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 10)).offset(x: -250, y: -10)
+                    }
+                    .padding(.top, 140)
+            }
             Picture(url: p.backdrop ?? p.poster)
                 .frame(width: 560, height: 315)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -224,13 +275,14 @@ struct LiveGuideView: View {
             HStack(spacing: 14) {
                 Text("\(ch.number)").font(Guide.mono(34, .black)).foregroundStyle(Guide.yellow).frame(width: 64, alignment: .trailing)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ch.name).font(.headline).foregroundStyle(.white).lineLimit(1)
-                    Text(ch.kind == "tv" ? "Shows" : "Movies").font(.caption2).foregroundStyle(.white.opacity(0.5))
+                    Text(ch.name).font(.headline).foregroundStyle(ch.takeover != nil ? Color(hex: 0xFF5468) : .white).lineLimit(1)
+                    Text(ch.takeover != nil ? "TAKEOVER" : ch.kind == "tv" ? "Shows" : "Movies").font(.caption2.weight(ch.takeover != nil ? .black : .regular))
+                        .foregroundStyle(ch.takeover != nil ? Color(hex: 0xFF5468) : .white.opacity(0.5))
                 }
             }
             .frame(width: labelWidth, alignment: .leading)
             ZStack(alignment: .leading) {
-                ForEach(ch.programs.filter { $0.slotEnd > t0 && $0.start < t1 }, id: \.self) { p in
+                ForEach(ch.programs.filter { $0.slotEnd > max(t0, now) && $0.start < t1 }, id: \.self) { p in  // what's finished is gone
                     let a = max(p.start, t0), b = min(p.slotEnd, t1)
                     Button { tuned = Tuned(key: ch.key) } label: {
                         GuideCell(program: p, onNow: p.start <= now && now < p.slotEnd, clipped: p.start < t0)
@@ -288,13 +340,22 @@ struct LiveBugView: View {
         if let at = bug.startsAt { ident(at) } else { card }
     }
 
-    // a few seconds after tuning in: the channel bug top right, now/next bottom left
+    private var name: String { (bug.name ?? bug.channel?.name ?? "").uppercased() }
+
+    // a few seconds after tuning in: the channel bug top right, now/next bottom left (with Vesper, if she's on)
     private var card: some View {
         ZStack {
             if let ch = bug.channel {
-                Text("\(ch.number) \(ch.name.uppercased())").font(Guide.mono(28, .black)).foregroundStyle(.white.opacity(0.85))
+                Text("\(ch.number) \(name)").font(Guide.mono(28, .black)).foregroundStyle(.white.opacity(0.85))
                     .padding(.horizontal, 16).padding(.vertical, 8).background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(60)
+            }
+            HStack(alignment: .bottom, spacing: 18) {
+            if let h = bug.host {
+                VStack(alignment: .leading, spacing: 8) {
+                    SpeechBubble(text: h.line, width: 560)
+                    HostSprite(mood: h.mood, talking: true, size: 200, talkFor: Double(h.line.count) * 0.045 + 0.6)
+                }
             }
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 14) {
@@ -313,6 +374,7 @@ struct LiveBugView: View {
             .padding(24)
             .background(LinearGradient(colors: [Guide.navy.opacity(0.92), Guide.navy.opacity(0.6)], startPoint: .leading, endPoint: .trailing),
                         in: RoundedRectangle(cornerRadius: 14))
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             .padding(.horizontal, 60).padding(.bottom, 230)  // clear of Apple's progress bar
         }
@@ -324,9 +386,17 @@ struct LiveBugView: View {
             LinearGradient(colors: [Guide.navy, .black], startPoint: .top, endPoint: .bottom)
             VStack(spacing: 18) {
                 if let ch = bug.channel {
-                    Text("\(ch.number)").font(Guide.mono(140, .black)).foregroundStyle(Guide.yellow).shadow(color: Guide.yellow.opacity(0.5), radius: 20)
-                    Text(ch.name.uppercased()).font(Guide.mono(54, .black)).foregroundStyle(.white)
-                    Text(ch.tagline).font(.title3).foregroundStyle(.white.opacity(0.6))
+                    Text("\(ch.number)").font(Guide.mono(120, .black)).foregroundStyle(Guide.yellow).shadow(color: Guide.yellow.opacity(0.5), radius: 20)
+                    Text(name).font(Guide.mono(54, .black)).foregroundStyle(.white)
+                    Text(bug.tagline ?? ch.tagline).font(.title3).foregroundStyle(.white.opacity(0.6))
+                    if bug.takeover { TakeoverPill() }
+                }
+                if let h = bug.host {
+                    HStack(alignment: .bottom, spacing: 10) {
+                        HostSprite(mood: h.mood, talking: true, size: 260, talkFor: Double(h.line.count) * 0.045 + 0.6)
+                        SpeechBubble(text: h.line, width: 640).padding(.bottom, 120)
+                    }
+                    .padding(.top, 10)
                 }
                 HStack(spacing: 24) {
                     Picture(url: bug.now.poster).frame(width: 120, height: 180).clipShape(RoundedRectangle(cornerRadius: 8))
@@ -341,6 +411,123 @@ struct LiveBugView: View {
                 }
                 .padding(.top, 30)
             }
+        }
+        .ignoresSafeArea()
+    }
+}
+
+
+// MARK: Vesper
+
+private struct TakeoverPill: View {
+    var body: some View {
+        Text("TAKEOVER").font(Guide.mono(18, .black)).foregroundStyle(.white)
+            .padding(.horizontal, 10).padding(.vertical, 4).background(Color(hex: 0xE50914), in: RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+/// Her picture (web/host/<mood>.png) or, while she's talking, her mouth moving (<mood>-talk.png: 5 frames side by side).
+struct HostSprite: View {
+    var mood: String
+    var talking: Bool
+    var size: CGFloat
+    var talkFor: Double = 4
+    @State private var still: UIImage?
+    @State private var frames: [UIImage] = []
+    @State private var started = Date()
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.11)) { ctx in
+            let talkingNow = talking && !frames.isEmpty && ctx.date.timeIntervalSince(started) < talkFor
+            let seq = [0, 1, 2, 3, 4, 3, 2, 1]
+            let n = Int(ctx.date.timeIntervalSinceReferenceDate / 0.11)
+            if let img = talkingNow ? frames[seq[n % seq.count] % frames.count] : still {
+                Image(uiImage: img).resizable().interpolation(.none).frame(width: size, height: size)
+            } else {
+                Color.clear.frame(width: size, height: size)
+            }
+        }
+        .task(id: mood) {
+            started = Date()
+            still = await HostArt.image("/host/\(mood).png")
+            if talking, let strip = await HostArt.image("/host/\(mood)-talk.png")?.cgImage {
+                let w = strip.height
+                frames = (0..<(strip.width / max(1, w))).compactMap { i in strip.cropping(to: CGRect(x: i * w, y: 0, width: w, height: w)).map { UIImage(cgImage: $0) } }
+            }
+        }
+    }
+}
+
+@MainActor
+enum HostArt {
+    private static var cache: [String: UIImage] = [:]
+    static func image(_ path: String) async -> UIImage? {
+        if let hit = cache[path] { return hit }
+        guard let url = URL(img: path), let (data, _) = try? await URLSession.shared.data(from: url), let img = UIImage(data: data) else { return nil }
+        cache[path] = img
+        return img
+    }
+}
+
+/// White speech bubble; the words type themselves out.
+struct SpeechBubble: View {
+    var text: String
+    var width: CGFloat
+    @State private var started = Date()
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.04)) { ctx in
+            let n = min(text.count, Int(ctx.date.timeIntervalSince(started) / 0.045))
+            ZStack(alignment: .topLeading) {
+                Text(text).opacity(0)  // holds the final size so the bubble doesn't grow as it types
+                Text(String(text.prefix(n)))
+            }
+            .font(.system(size: 30, weight: .semibold)).foregroundStyle(.black)
+            .padding(.horizontal, 22).padding(.vertical, 16)
+            .frame(maxWidth: width, alignment: .leading)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear { started = Date() }
+        .id(text)
+    }
+}
+
+// MARK: retro touches
+
+/// A burst of TV static when changing channels.
+struct StaticNoise: View {
+    private static let frames: [UIImage] = (0..<4).map { _ in noise(160, 90) }
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let i = Int(ctx.date.timeIntervalSinceReferenceDate * 30) % Self.frames.count
+            Image(uiImage: Self.frames[i]).resizable().interpolation(.none)
+                .overlay(VStack(spacing: 3) { ForEach(0..<120, id: \.self) { _ in Color.black.opacity(0.25).frame(height: 2) } })
+        }
+        .ignoresSafeArea()
+    }
+    private static func noise(_ w: Int, _ h: Int) -> UIImage {
+        var px = [UInt8](repeating: 255, count: w * h * 4)
+        for i in 0..<(w * h) { let v = UInt8.random(in: 0...255); px[i * 4] = v; px[i * 4 + 1] = v; px[i * 4 + 2] = v }
+        let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        return UIImage(cgImage: ctx.makeImage()!)
+    }
+}
+
+/// Shown while the video is catching up (buffering), instead of a spinner.
+struct StandByCard: View {
+    var body: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                ForEach([0xC0C0C0, 0xC0C000, 0x00C0C0, 0x00C000, 0xC000C0, 0xC00000, 0x0000C0], id: \.self) { Color(hex: UInt32($0)) }
+            }
+            VStack(spacing: 10) {
+                Text("PLEASE STAND BY").font(Guide.mono(64, .black))
+                Text("We'll be right back.").font(Guide.mono(28))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 50).padding(.vertical, 30)
+            .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 8))
         }
         .ignoresSafeArea()
     }
