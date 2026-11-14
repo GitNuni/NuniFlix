@@ -8,6 +8,7 @@ struct Shelf: Decodable, Identifiable, Hashable {
     var tagline: String?
     var art: String?
     var now: Bool?
+    var season: String?    // the seasonal background its page borrows (thanksgiving → fall)
     var id: String { key }
 }
 
@@ -96,7 +97,7 @@ struct ShelfPage: View {
             .padding(.bottom, Metrics.spacing)
         }
         .ignoresSafeArea(edges: .top)
-        .background(theme.backgroundView)
+        .background(theme.backgroundView.environment(\.seasonOverride, HolidaySeason(rawValue: shelf.season ?? (shelf.key == "thanksgiving" ? "fall" : shelf.key))))
         .onAppear { model.theme = model.appTheme }
         .task { if page == nil { await load() } }
     }

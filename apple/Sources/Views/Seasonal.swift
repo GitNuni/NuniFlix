@@ -8,21 +8,31 @@ import SwiftUI
 struct SeasonalLayer: View {
     @AppStorage("season") private var on = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.seasonOverride) private var borrowed   // a shelf page brings its own season (Christmas, Valentine's, Kids…)
     @ObservedObject private var art = SeasonArt.shared
 
     var body: some View {
+        let season = borrowed ?? HolidaySeason.current
         if on && !reduceMotion {
-            let snap = art.snapshot
+            let snap = art.sets[season.rawValue] ?? ArtSnapshot()
             TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
                 Canvas { ctx, size in
-                    HolidaySeason.current.draw(&ctx, size, tl.date.timeIntervalSinceReferenceDate, snap)
+                    season.draw(&ctx, size, tl.date.timeIntervalSinceReferenceDate, snap)
                 }
             }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .ignoresSafeArea()
-            .task { await art.load(HolidaySeason.current) }
+            .task(id: season) { await art.load(season) }
         }
+    }
+}
+
+private struct SeasonOverrideKey: EnvironmentKey { static let defaultValue: HolidaySeason? = nil }
+extension EnvironmentValues {
+    var seasonOverride: HolidaySeason? {
+        get { self[SeasonOverrideKey.self] }
+        set { self[SeasonOverrideKey.self] = newValue }
     }
 }
 
@@ -31,26 +41,21 @@ struct ArtSnapshot {
     var scene: Image?
     var sceneSize = CGSize.zero
     var moon: Image?
-    var leaves: [Image] = []      // the season's falling sprites: leaves, flakes or petals
+    var leaves: [Image] = []      // the season's falling sprites: leaves, flakes, petals, hearts or sweets
     var flyer: [Image] = []
     var walker: [Image] = []
 }
 
-/// PixelLab pixel art for a season, loaded from the NuniFlix server (web/season/<season>/), so it can change without
-/// an app update. Seasons without art (or before it arrives) use the drawn shapes.
+/// PixelLab pixel art for each season, loaded from the NuniFlix server (web/season/<season>/), so it can change without
+/// an app update. Kept per season: the home screen and an open shelf page can show different ones. Seasons without
+/// art (or before it arrives) use the drawn shapes.
 @MainActor
 final class SeasonArt: ObservableObject {
     static let shared = SeasonArt()
-    @Published private(set) var scene: Image?
-    @Published private(set) var sceneSize = CGSize.zero
-    @Published private(set) var moon: Image?
-    @Published private(set) var leaves: [Image] = []
-    @Published private(set) var walker: [Image] = []
-    @Published private(set) var flyer: [Image] = []
-    private var loaded: String?
-    var snapshot: ArtSnapshot { ArtSnapshot(scene: scene, sceneSize: sceneSize, moon: moon, leaves: leaves, flyer: flyer, walker: walker) }
+    @Published private(set) var sets: [String: ArtSnapshot] = [:]
+    private var started = Set<String>()
 
-    /// What each season has, the same files the website uses (season.js ART).
+    /// What each season has, the same files the website uses (season.js ART). "folder/file" borrows another season's.
     private typealias Files = (scene: String?, moon: String?, leaves: (String, Int)?, walker: (String, Int)?, flyer: (String, Int)?)
     private static let files: [String: Files] = [
         "fall": ("scene.png", "moon.png", ("leaves.png", 5), ("turkey.png", 8), nil),
@@ -59,14 +64,18 @@ final class SeasonArt: ObservableObject {
         "winter": ("scene.png", nil, ("flakes.png", 2), nil, nil),
         "spring": ("scene.png", nil, ("petals.png", 2), nil, nil),
         "summer": ("scene.png", nil, nil, nil, nil),
+        "valentines": ("scene.png", nil, ("hearts.png", 2), nil, nil),
+        "kids": ("scene.png", nil, ("sweets.png", 2), nil, nil),
+        "horror": ("scene.png", nil, ("halloween/leaves.png", 5), nil, ("halloween/bat.png", 6)),
     ]
 
     func load(_ season: HolidaySeason) async {
         let folder = season.artFolder
-        guard loaded != season.rawValue, let base = API.shared.base, let f = Self.files[folder] else { return }
-        loaded = season.rawValue
+        guard !started.contains(season.rawValue), let base = API.shared.base, let f = Self.files[folder] else { return }
+        started.insert(season.rawValue)
         func fetch(_ name: String) async -> CGImage? {
-            guard let url = URL(string: "\(base.absoluteString)/season/\(folder)/\(name)"),
+            let path = name.contains("/") ? name : "\(folder)/\(name)"
+            guard let url = URL(string: "\(base.absoluteString)/season/\(path)"),
                   let (data, resp) = try? await URLSession.shared.data(from: url),
                   (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             return UIImage(data: data)?.cgImage
@@ -76,16 +85,19 @@ final class SeasonArt: ObservableObject {
             let w = cg.width / n
             return (0..<n).compactMap { cg.cropping(to: CGRect(x: $0 * w, y: 0, width: w, height: cg.height)) }.map(pixel)
         }
-        if let name = f.scene, let cg = await fetch(name) { scene = pixel(cg); sceneSize = CGSize(width: cg.width, height: cg.height) }
-        if let name = f.moon, let cg = await fetch(name) { moon = pixel(cg) }
-        if let (name, n) = f.leaves, let cg = await fetch(name) { leaves = slices(cg, n) }
-        if season != .autumn, let (name, n) = f.walker, let cg = await fetch(name) { walker = slices(cg, n) }  // September: no cameo
-        if let (name, n) = f.flyer, let cg = await fetch(name) { flyer = slices(cg, n) }
+        var a = ArtSnapshot()
+        if let name = f.scene, let cg = await fetch(name) { a.scene = pixel(cg); a.sceneSize = CGSize(width: cg.width, height: cg.height) }
+        if let name = f.moon, let cg = await fetch(name) { a.moon = pixel(cg) }
+        if let (name, n) = f.leaves, let cg = await fetch(name) { a.leaves = slices(cg, n) }
+        if season != .autumn, let (name, n) = f.walker, let cg = await fetch(name) { a.walker = slices(cg, n) }  // September: no cameo
+        if let (name, n) = f.flyer, let cg = await fetch(name) { a.flyer = slices(cg, n) }
+        sets[season.rawValue] = a
     }
 }
 
 enum HolidaySeason: String {
     case halloween, fall, autumn, christmas, winter, spring, summer
+    case valentines, kids, horror   // not seasons: the backgrounds of those shelves (ShelfPage)
 
     static var current: HolidaySeason {
         #if DEBUG  // simulator previews: NF_SEASON=christmas
@@ -113,6 +125,9 @@ enum HolidaySeason: String {
         case .spring: return "Folk Horror Spring"
         case .summer: return "Summer Camp Slashers"
         case .autumn: return "Back to School Scares"
+        case .valentines: return "Valentine's"
+        case .kids: return "Kids"
+        case .horror: return "Horror"
         }
     }
     /// Where its pixel art lives on the server (September borrows the fall art).
@@ -129,8 +144,9 @@ enum HolidaySeason: String {
         switch self {
         case .halloween, .fall, .autumn: return .leaf
         case .christmas, .winter: return .snow
-        case .spring: return .petal
+        case .spring, .valentines, .kids: return .petal
         case .summer: return .fly
+        case .horror: return .leaf
         }
     }
     private var count: Int {
@@ -140,7 +156,9 @@ enum HolidaySeason: String {
         case .fall: return 22
         case .halloween: return 14
         case .autumn: return 12
-        case .spring, .summer: return 12
+        case .spring, .summer, .horror: return 12
+        case .valentines: return 16
+        case .kids: return 18
         }
     }
     private enum Cameo { case krampus, turkey, bats }
@@ -148,11 +166,11 @@ enum HolidaySeason: String {
         switch self {
         case .christmas: return .krampus
         case .fall: return .turkey
-        case .halloween: return .bats
+        case .halloween, .horror: return .bats
         default: return nil
         }
     }
-    private var eyes: Bool { self == .christmas || self == .halloween || Self.horrorHours }
+    private var eyes: Bool { self != .kids && (self == .christmas || self == .halloween || self == .horror || Self.horrorHours) }
 
     /// A stable pseudo-random number in 0..<1 for particle i, property k.
     private func r(_ i: Int, _ k: Int) -> Double {

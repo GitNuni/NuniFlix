@@ -73,6 +73,7 @@ SHELVES = {
     ]),
 }
 WEB = os.path.join(os.path.dirname(__file__), "web")
+BACKDROP = {"thanksgiving": "fall"}  # the seasonal background a shelf page borrows (web/season/<name>/); the rest share their key
 
 
 def _in(window, d):
@@ -106,7 +107,7 @@ def listing(d=None):
     out = []
     for k, (title, tagline, window, _, _) in sorted(SHELVES.items(), key=order):
         out.append({"key": k, "title": title, "tagline": tagline, "art": f"/shelves/{k}.png",
-                    "now": _in(window, d), "all_year": window is None})
+                    "now": _in(window, d), "all_year": window is None, "season": BACKDROP.get(k, k)})
     return out
 
 
@@ -171,4 +172,4 @@ def page(key, user=None):
             out.append({**r, "sort": "popular", "cat": None, "items": items[:20]})
     hero = next((x for r in out for x in r["items"] if x.get("backdrop") and x.get("overview")), None)
     return {"key": key, "title": title, "tagline": tagline, "art": f"/shelves/{key}.png",
-            "now": _in(window, datetime.date.today()), "hero": hero, "rows": out}
+            "now": _in(window, datetime.date.today()), "season": BACKDROP.get(key, key), "hero": hero, "rows": out}

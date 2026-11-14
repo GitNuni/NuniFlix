@@ -121,7 +121,11 @@ private struct WebView: UIViewRepresentable {
             web.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) { [weak self] in
                 guard let self else { return }
                 self.cookieSet = true
-                web.load(URLRequest(url: self.parent.server))
+                var url = self.parent.server
+                #if DEBUG  // simulator previews: NF_WEB_QUERY=office opens /?office
+                if let q = ProcessInfo.processInfo.environment["NF_WEB_QUERY"], let u = URL(string: "/?" + q, relativeTo: url) { url = u.absoluteURL }
+                #endif
+                web.load(URLRequest(url: url))
             }
         }
 

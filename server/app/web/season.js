@@ -42,6 +42,10 @@
     winter: {p: "snow", per: 40000, max: 32},
     spring: {p: "petal", per: 90000, max: 12},
     summer: {p: "fly", per: 90000, max: 14},
+    // the shelves that aren't a season (NFSeason.use, while a shelf page is open)
+    valentines: {p: "petal", per: 70000, max: 16},
+    kids: {p: "petal", per: 60000, max: 18, noEyes: true},
+    horror: {p: "leaf", per: 90000, max: 12, cameo: "bats", eyes: true},
   };
   // PixelLab pixel art (web/season/<season>/), drawn crisp. Seasons without art use the drawn shapes below.
   // sprites: the falling particles; walker: the cameo's walk cycle; flyer: a flock's flap cycle. [file, frames, size]
@@ -53,13 +57,16 @@
     winter: {dir: "/season/winter/", scene: "scene.png", sprites: ["flakes.png", 2, 32]},
     spring: {dir: "/season/spring/", scene: "scene.png", sprites: ["petals.png", 2, 32]},
     summer: {dir: "/season/summer/", scene: "scene.png"},
+    valentines: {dir: "/season/valentines/", scene: "scene.png", sprites: ["hearts.png", 2, 32]},
+    kids: {dir: "/season/kids/", scene: "scene.png", sprites: ["sweets.png", 2, 32]},
+    horror: {dir: "/season/horror/", scene: "scene.png", sprites: ["/season/halloween/leaves.png", 5, 32], flyer: ["/season/halloween/bat.png", 6, 48]},
   };
   const art = {};  // loaded images for the current season
   function loadArt() {
     const a = ART[season];
     for (const k of Object.keys(art)) delete art[k];
     if (!a) return;
-    const img = (key, file) => { const i = new Image(); i.onload = () => { art[key] = i; sceneLayer = null; }; i.src = a.dir + file; };
+    const img = (key, file) => { const i = new Image(); i.onload = () => { art[key] = i; sceneLayer = null; }; i.src = file.startsWith("/") ? file : a.dir + file; };
     if (a.scene) img("scene", a.scene);
     if (a.moon) img("moon", a.moon);
     if (a.sprites) img("sprites", a.sprites[0]);
@@ -250,7 +257,7 @@
   }
 
   function drawEyes(now) {
-    if (!KIND[season].eyes && !late()) return;
+    if (KIND[season].noEyes || (!KIND[season].eyes && !late())) return;
     if (!eyes && now > nextEyes) eyes = {start: now, x: rnd(30, W - 30), y: rnd(60, H * 0.45)};
     if (!eyes) return;
     const q = (now - eyes.start) / 4500;
@@ -276,7 +283,7 @@
 
   function start() {
     if (on) return;
-    on = true; season = forced && KIND[forced] ? forced : seasonFor(new Date());
+    on = true; season = current();
     if (!cv) {
       cv = document.createElement("canvas");
       cv.id = "season"; cv.setAttribute("aria-hidden", "true");
@@ -294,9 +301,14 @@
     if (cv) { ctx.clearRect(0, 0, W, H); cv.hidden = true; }
   }
 
-  let want = true;
+  let want = true, borrowed = null;  // borrowed: a shelf page's background (Christmas, Valentine's, Kids...) while it's open
+  const current = () => borrowed || (forced && KIND[forced] ? forced : seasonFor(new Date()));
   const apply = () => (want && !reduce.matches && !document.hidden ? start() : stop());
   document.addEventListener("visibilitychange", apply);
   reduce.addEventListener?.("change", apply);
-  window.NFSeason = {set(v) { want = v !== false; apply(); }, name: () => forced && KIND[forced] ? forced : seasonFor(new Date())};
+  window.NFSeason = {set(v) { want = v !== false; apply(); }, name: current,
+    use(k) {  // NFSeason.use("christmas") on a shelf page; use(null) to go back to today's season
+      borrowed = KIND[k] ? k : null;
+      if (on && season !== current()) { stop(); apply(); }
+    }};
 })();

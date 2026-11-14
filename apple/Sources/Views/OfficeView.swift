@@ -6,6 +6,7 @@ import SwiftUI
 struct OfficeView: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var art = OfficeArt()
+    @StateObject private var hq = HQModel()   // the website's own building (Office/HQEngine.swift); old servers get the floors below
     @State private var snap: Snapshot?
     @State private var error: String?
 
@@ -36,6 +37,21 @@ struct OfficeView: View {
         ZStack {
             LinearGradient(colors: [Color(hex: 0x0B0820), Color(hex: 0x1A1236)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             SeasonalLayer()
+            if !hq.failed {
+                HStack(alignment: .top, spacing: 50) {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            sign.padding(.top, 30)
+                            if let snap { Text(summary(snap)).font(.system(size: 26, weight: .semibold, design: .monospaced)).foregroundStyle(.white.opacity(0.8)).padding(.bottom, 20) }
+                            HQBuilding(hq: hq, width: hqWidth)
+                        }
+                        .frame(width: 1180)
+                        .padding(.bottom, 60)
+                    }
+                    log.frame(width: 520)
+                }
+                .padding(.horizontal, 60)
+            } else {
             HStack(alignment: .top, spacing: 50) {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -52,8 +68,11 @@ struct OfficeView: View {
                 log.frame(width: 520)
             }
             .padding(.horizontal, 60)
+            }
             if let error { ErrorView(message: error) { Task { await load() } } }
         }
+        .onAppear { hq.start(brand: model.brand) }
+        .onDisappear { hq.stop() }
         .task {
             await art.load()
             while !Task.isCancelled {  // live: a fresh snapshot every 8 seconds
@@ -198,6 +217,19 @@ struct OfficeView: View {
         Text(text).font(.system(size: 22, weight: .medium, design: .monospaced)).foregroundStyle(.white.opacity(0.6)).padding(.top, 40)
     }
 
+    private var hqWidth: CGFloat {
+        #if DEBUG  // simulator previews: NF_HQ_WIDTH=380 shows the whole building at once
+        if let w = ProcessInfo.processInfo.environment["NF_HQ_WIDTH"].flatMap(Double.init) { return w }
+        #endif
+        return 1180
+    }
+
+    private func summary(_ d: Snapshot) -> String {
+        let bits = [(d.streams.count, "watching"), (d.downloads.count, "downloading"), (d.searching.count, "being looked for"), (d.pending.count, "waiting for approval")]
+            .filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }
+        return bits.isEmpty ? "All quiet right now" : bits.joined(separator: " · ")
+    }
+
     private func eta(_ left: Double?, _ pct: Double?) -> String {
         guard let left, left > 0 else { return "\(Int(pct ?? 0))%" }
         let m = Int(left / 60)
@@ -244,7 +276,12 @@ struct OfficeView: View {
         #if DEBUG
         if ProcessInfo.processInfo.environment["NF_OFFICE_DEMO"] != nil { q["demo"] = "true" }  // simulator previews: a busy office
         #endif
-        do { snap = try await API.shared.get("/office", q); error = nil }
+        do {
+            let (data, status) = try await API.shared.send("GET", "/office", query: q)
+            guard status == 200 else { throw URLError(.badServerResponse) }
+            snap = try JSONDecoder().decode(Snapshot.self, from: data); error = nil
+            if let json = String(data: data, encoding: .utf8) { hq.engine.sync(json) }  // the building moves people about from this
+        }
         catch { if !(error is CancellationError) && snap == nil { self.error = error.localizedDescription } }
     }
 }
