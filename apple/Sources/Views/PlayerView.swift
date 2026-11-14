@@ -19,8 +19,8 @@ struct PlayItem: Decodable, Identifiable, Hashable {
     var duration: Double
     var watched: Bool
 
-    /// Worth offering "Resume": past the first minute and not in the end credits.
-    var canResume: Bool { resume > 60 && (duration == 0 || resume < duration * 0.93) }
+    /// Worth offering "Resume or start over": some real progress, and not already in the end credits.
+    var canResume: Bool { resume > 15 && (duration == 0 || resume < duration * 0.95) }
     var code: String? {
         guard let season, let episode else { return nil }
         return "S\(season) · E\(episode)"
@@ -46,6 +46,9 @@ final class Playback: ObservableObject {
     private var statusObserver: NSKeyValueObservation?
     private var lastReport = Date.distantPast
     private var starting = false
+    /// Until the jump to the resume point is done, progress isn't sent (a 0:00 report would wipe the resume point).
+    /// (Closing before then reports the resume point itself.)
+    private var holdAt: Double?
     /// The title being watched ("movie"/"tv" + its NuniFlix id), for the subtitle search.
     let kind: String
     let extID: Int
@@ -94,12 +97,26 @@ final class Playback: ObservableObject {
             playerItem.externalMetadata = metadata()
             player.replaceCurrentItem(with: playerItem)
             watch(playerItem)
-            if position > 0 { await player.seek(to: CMTime(seconds: position, preferredTimescale: 600)) }
+            if position > 0 {
+                holdAt = position
+                defer { holdAt = nil }
+                // A seek before the stream is ready gets dropped and it plays from 0:00, so wait for it first.
+                await ready(playerItem)
+                await player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 2, preferredTimescale: 1))
+            }
             player.play()
         } catch is CancellationError {
             return
         } catch {
             if player.currentItem == nil { self.error = error.localizedDescription }  // already playing: not worth an alert
+        }
+    }
+
+    /// Waits (up to 20 s) for the stream to be ready to play.
+    private func ready(_ item: AVPlayerItem) async {
+        for _ in 0..<80 where item.status != .readyToPlay {
+            if item.status == .failed || player.currentItem !== item { return }
+            try? await Task.sleep(for: .milliseconds(250))
         }
     }
 
@@ -139,7 +156,7 @@ final class Playback: ObservableObject {
     }
 
     private func report(force: Bool) {
-        guard let session, force || Date().timeIntervalSince(lastReport) >= 10 else { return }
+        guard let session, holdAt == nil, force || Date().timeIntervalSince(lastReport) >= 10 else { return }
         lastReport = Date()
         let state = player.timeControlStatus == .paused ? "paused" : "playing"
         let body: [String: Any] = ["session": session, "position": position, "duration": duration, "state": state]
@@ -276,7 +293,7 @@ final class Playback: ObservableObject {
     private func stopStream() async {
         guard let session else { return }
         self.session = nil
-        _ = try? await API.shared.post("/play/progress", ["session": session, "position": position, "duration": duration, "state": "stopped"])
+        _ = try? await API.shared.post("/play/progress", ["session": session, "position": holdAt ?? position, "duration": duration, "state": "stopped"])
     }
 
     func close() {

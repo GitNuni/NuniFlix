@@ -3204,7 +3204,7 @@ async function loadWatch(it) {
 const PL = {native: !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl")};
 const plClock = s => { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, "0");
   return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`; };
-const plCanResume = e => e.resume > 60 && (!e.duration || e.resume < e.duration * .93);
+const plCanResume = e => e.resume > 15 && (!e.duration || e.resume < e.duration * .95);
 
 async function playHere(it) {
   let o;
@@ -3269,10 +3269,18 @@ async function plStart(e, at, upNext, subtitle) {
   try { st = await api("/play/start", {body: {id: e.id, offset: 0, platform: PL.native ? "ios" : "web", ...(subtitle != null ? {subtitle} : {})}}); }
   catch (err) { return fail(err.message); }
   if (!$("#player")) { api("/play/progress", {body: {session: st.session, position: 0, state: "stopped"}}).catch(() => {}); return; }
-  PL.cur = {session: st.session, video: v, last: 0};
+  // No progress until the jump to the resume point has happened: a 0:00 report would wipe the resume point.
+  PL.cur = {session: st.session, video: v, last: 0, hold: at > 0 ? at : 0};
   $("#player .pl-cc").hidden = false;
   if (PL.vtt) plAddVtt(PL.vtt);
-  v.addEventListener("loadedmetadata", () => { if (at > 0) v.currentTime = at; msg.hidden = true; }, {once: true});
+  // Safari (and the iPhone app) can drop a seek made before it's ready, so try again until it sticks.
+  const jump = () => { if (at > 0 && v.currentTime < at - 5) v.currentTime = at; };
+  if (at > 0) {
+    ["loadedmetadata", "canplay", "playing"].forEach(ev => v.addEventListener(ev, jump, {once: true}));
+    const landed = () => { if (PL.cur?.video === v && v.currentTime >= at - 5) PL.cur.hold = 0; };
+    v.addEventListener("seeked", landed); v.addEventListener("playing", landed);
+  }
+  v.addEventListener("loadedmetadata", () => { msg.hidden = true; }, {once: true});
   v.addEventListener("playing", () => { msg.hidden = true; });
   v.addEventListener("ended", async () => {
     await plStopStream();
@@ -3352,7 +3360,7 @@ function plAddVtt(url) {
 
 function plReport(state) {
   const c = PL.cur;
-  if (!c) return;
+  if (!c || c.hold) return;
   c.last = Date.now();
   const v = c.video;
   api("/play/progress", {body: {session: c.session, position: v.currentTime || 0, duration: isFinite(v.duration) ? v.duration : null,
@@ -3364,7 +3372,7 @@ async function plStopStream(beacon) {
   if (!c) return;
   PL.cur = null;
   if (plHls) { plHls.destroy(); plHls = null; }
-  const body = {session: c.session, position: c.video.currentTime || 0, duration: isFinite(c.video.duration) ? c.video.duration : null, state: "stopped"};
+  const body = {session: c.session, position: c.hold || c.video.currentTime || 0, duration: isFinite(c.video.duration) ? c.video.duration : null, state: "stopped"};
   c.video.pause(); c.video.removeAttribute("src"); c.video.load();
   if (beacon) return fetch("/api/play/progress", {method: "POST", keepalive: true, credentials: "same-origin",
                                                  headers: {"X-NF": "1", "Content-Type": "application/json"}, body: JSON.stringify(body)}).catch(() => {});
