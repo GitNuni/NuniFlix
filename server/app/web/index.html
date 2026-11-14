@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>NuniFlix</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,700..900,0..100,0..1;1,9..144,700..900,0..100,0..1&family=Atomic+Age&family=Cinzel:wght@500;600;700&family=Oswald:wght@500;700&family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400..700&family=IBM+Plex+Mono:wght@500;600&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,700..900,0..100,0..1;1,9..144,700..900,0..100,0..1&family=Atomic+Age&family=Cinzel:wght@500;600;700&family=Oswald:wght@500;700&family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400..700&family=IBM+Plex+Mono:wght@500;600&family=Silkscreen:wght@400;700&family=Press+Start+2P&family=Pixelify+Sans:wght@400..700&display=swap" rel="stylesheet">
 <script>try { const b = localStorage.getItem("nf.brand"); if (b) document.title = b + "Flix"; } catch {}
 try { const t = localStorage.getItem("nf.theme"); if (t && t !== "nuniflix") document.documentElement.dataset.theme = t; } catch {}</script>
 <style>
@@ -579,6 +579,66 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 :root[data-theme="horror"] .feature{border-radius:1px;box-shadow:0 0 0 2px #b8963e,0 0 0 5px #0b0a09,0 0 0 6px rgba(184,150,62,.45)}
 :root[data-theme="horror"] .sheet{border-radius:0;box-shadow:0 -2px 0 #b8963e}
 :root[data-theme="horror"] .svc img,:root[data-theme="horror"] .svc .ph{border-radius:2px;box-shadow:0 0 0 1px #b8963e}
+
+/* ---------- Pixel: an 8-bit title screen. Press Start 2P headings with hard drop shadows, chunky square borders,
+   a PixelLab skyline over the top of the page (web/theme/pixel/), scanlines, and pixel tab icons. ---------- */
+:root[data-theme="pixel"]{
+  --bg:#0a0820; --card:#1b1446; --fill:rgba(180,170,255,.10); --fill2:rgba(180,170,255,.2);
+  --text:#f4f1ff; --text2:rgba(220,214,255,.66); --sep:#2d2575;
+  --accent:#ff2e4d; --accent2:#ffd43b; --on-accent:#fff; --bar:rgba(10,8,32,.97); --radius:0;
+  --green:#3ee07a; --orange:#ff9a3c; --red:#ff2e4d; --blue:#4cc9ff;
+  --display:"Press Start 2P",ui-monospace,monospace; --font:"Pixelify Sans",ui-monospace,monospace; color-scheme:dark;
+}
+:root[data-theme="pixel"] body{font-family:var(--font);background:url(/theme/pixel/sky.png) 28% top/max(100%,640px) auto no-repeat,
+  linear-gradient(180deg,#1b1446 0,#0a0820 520px) fixed,var(--bg);image-rendering:pixelated}
+:root[data-theme="pixel"] body::before{content:"";position:absolute;left:0;right:0;top:0;height:max(37.5vw,240px);pointer-events:none;z-index:-1;
+  background:linear-gradient(180deg,rgba(10,8,32,.35),rgba(10,8,32,.7) 70%,var(--bg))}
+:root[data-theme="pixel"] body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:60;background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 2px,transparent 2px 4px)}
+:root[data-theme="pixel"] :is(input,textarea,select,button){font-family:inherit}
+:root[data-theme="pixel"] img{image-rendering:auto}
+:root[data-theme="pixel"] :is(.big-title,.logo,h2,.detail h3,.setup h1,.person-head h3){font-family:var(--display);font-weight:400;text-transform:uppercase;letter-spacing:0;line-height:1.35}
+:root[data-theme="pixel"] :is(.big-title,.logo,.setup h1){color:var(--accent2);text-shadow:3px 3px 0 var(--accent),6px 6px 0 #000}
+:root[data-theme="pixel"] .big-title{font-size:22px;margin:14px 0 22px}
+:root[data-theme="pixel"] .big-title::after{content:"";display:inline-block;width:28px;height:28px;margin-left:12px;vertical-align:-4px;background:url(/theme/pixel/star.png) center/contain no-repeat;
+  image-rendering:pixelated;animation:px-blink 1.2s steps(2) infinite}
+@keyframes px-blink{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){:root[data-theme="pixel"] .big-title::after{animation:none}}
+:root[data-theme="pixel"] :is(.big-title .dot,.logo span){color:var(--accent2)}
+:root[data-theme="pixel"] .logo{font-size:28px;margin-bottom:12px}
+:root[data-theme="pixel"] .logo::after{content:"";display:inline-block;width:34px;height:34px;margin-left:12px;vertical-align:-6px;
+  background:url(/theme/pixel/popcorn.png) center/contain no-repeat;image-rendering:pixelated;text-shadow:none}
+:root[data-theme="pixel"] h2{font-size:12px;color:var(--accent2);text-shadow:2px 2px 0 #000;margin-top:26px}
+:root[data-theme="pixel"] .btn{border-radius:0;font-family:var(--display);font-size:11px;text-transform:uppercase;letter-spacing:0;box-shadow:inset -3px -3px 0 rgba(0,0,0,.35),4px 4px 0 #000;transition:none}
+:root[data-theme="pixel"] .btn:active{transform:translate(3px,3px);box-shadow:inset -3px -3px 0 rgba(0,0,0,.35),1px 1px 0 #000}
+:root[data-theme="pixel"] .btn.gray{background:var(--card);color:var(--text);box-shadow:inset 0 0 0 3px #3a3192,4px 4px 0 #000}
+:root[data-theme="pixel"] :is(.list,.form,.seasons,.me,.summary,.issue-form){border-radius:0;box-shadow:inset 0 0 0 3px #2d2575,4px 4px 0 #000}
+:root[data-theme="pixel"] .poster{border-radius:0;box-shadow:0 0 0 3px #000,0 0 0 6px #3a3192,6px 6px 0 6px #000}
+:root[data-theme="pixel"] .pill{border-radius:0;font-family:var(--display);font-size:7px;padding:4px 5px;letter-spacing:0;box-shadow:2px 2px 0 #000;backdrop-filter:none}
+:root[data-theme="pixel"] .pill.available,:root[data-theme="pixel"] .pill.partial{background:var(--green);color:#000}
+:root[data-theme="pixel"] .pill.processing{background:var(--blue);color:#000}
+:root[data-theme="pixel"] .pill.pending{background:var(--accent2);color:#000}
+:root[data-theme="pixel"] .tabs{border-top:4px solid #000;box-shadow:0 -4px 0 #3a3192}
+:root[data-theme="pixel"] .tabs button{font-family:var(--display);font-size:7px;text-transform:uppercase;gap:6px}
+:root[data-theme="pixel"] .tabs button svg{visibility:hidden}
+:root[data-theme="pixel"] .tabs button::before{content:"";position:absolute;top:4px;left:50%;margin-left:-16px;width:32px;height:32px;background:currentColor;
+  -webkit-mask:var(--ic) center/contain no-repeat;mask:var(--ic) center/contain no-repeat}
+:root[data-theme="pixel"] .tabs button{position:relative}
+:root[data-theme="pixel"] .tabs [data-tab="home"]{--ic:url(/theme/pixel/ic-home.png)}
+:root[data-theme="pixel"] .tabs [data-tab="browse"]{--ic:url(/theme/pixel/ic-browse.png)}
+:root[data-theme="pixel"] .tabs [data-tab="search"]{--ic:url(/theme/pixel/ic-search.png)}
+:root[data-theme="pixel"] .tabs [data-tab="requests"]{--ic:url(/theme/pixel/ic-requests.png)}
+:root[data-theme="pixel"] .tabs [data-tab="you"]{--ic:url(/theme/pixel/ic-you.png)}
+:root[data-theme="pixel"] .tabs button.on{color:var(--accent2)}
+:root[data-theme="pixel"] :is(.seg button,.chips button){border-radius:0}
+:root[data-theme="pixel"] .seg button.on,:root[data-theme="pixel"] .chips button.on{background:var(--accent);color:#fff;box-shadow:3px 3px 0 #000}
+:root[data-theme="pixel"] .feature{border-radius:0;box-shadow:0 0 0 4px #000,0 0 0 8px var(--accent2),8px 8px 0 8px #000}
+:root[data-theme="pixel"] .sheet{border-radius:0;background:var(--bg);box-shadow:0 -4px 0 #000,0 -8px 0 var(--accent2)}
+:root[data-theme="pixel"] .searchbox{background:linear-gradient(var(--bg) 80%,transparent)}
+:root[data-theme="pixel"] .svc img,:root[data-theme="pixel"] .svc .ph{border-radius:0;box-shadow:0 0 0 3px #000,4px 4px 0 3px #000}
+:root[data-theme="pixel"] :is(.switch i,.switch i::after){border-radius:0}
+:root[data-theme="pixel"] .ofc{border-radius:0;box-shadow:inset 0 0 0 3px rgba(0,0,0,.35),4px 4px 0 #000}
+.sw.pixel{background:#0a0820 url(/theme/pixel/sky.png) center/cover;color:#ffd43b;font-family:"Press Start 2P",monospace;font-size:12px;font-weight:400;
+  text-shadow:2px 2px 0 #ff2e4d,4px 4px 0 #000;image-rendering:pixelated}
 
 /* ---------- Repertory: a repertory cinema's printed program. Paper and ink, hairline rules, numbered sections,
    typewriter specs. One spot color for what matters, and every title prints in its own ink (taken from its poster). ---------- */
@@ -1181,7 +1241,7 @@ new MutationObserver(() => document.querySelectorAll("img[data-src]:not([data-wa
 })).observe(document.body, {childList: true, subtree: true});
 
 /* ---------- themes ---------- */
-const THEMES = {nuniflix: "NuniFlix", repertory: "Repertory", premiere: "Premiere", nunitech: "Nunitech", blockbuster: "Blockbuster", retro: "Retro", atomic: "Atomic Age", horror: "Horror"};
+const THEMES = {nuniflix: "NuniFlix", repertory: "Repertory", premiere: "Premiere", nunitech: "Nunitech", blockbuster: "Blockbuster", retro: "Retro", atomic: "Atomic Age", horror: "Horror", pixel: "Pixel"};
 const theme = () => document.documentElement.dataset.theme || "nuniflix";
 const WORDS = {
   base: {available: "Available", partial: "Some", requested: "Requested", pending: "Pending", request: "Request",
@@ -1196,6 +1256,8 @@ const WORDS = {
          okToast: "Requested. It's on its way.", pendToast: "Requested. It's in the review pile."},
   premiere: {request: "Request",
          okToast: "Requested. It's on its way.", pendToast: "Requested. Waiting for approval."},
+  pixel: {request: "Insert coin",
+         okToast: "1UP! It's on its way.", pendToast: "Coin inserted. Waiting for player 2 (an admin)."},
   retro: {request: "Book it",
          okToast: "Booked! Stay tuned.", pendToast: "Booked! Waiting on the producer."},
 };
@@ -4599,7 +4661,7 @@ function paneAccount(el) {
     <h2>Seasonal effects</h2><form class="form" id="fSeason"><label><span style="width:auto">Falling leaves, snow… and the odd visitor</span>${swi("season", ME.prefs.season !== false)}</label></form>
     <p class="foot">Quietly behind everything: leaves in the fall, snow at Christmas. Keep an eye on the bottom of the screen around the holidays. Off automatically if your device is set to reduce motion.</p>
     <h2>Theme</h2><div class="themes">${Object.entries(THEMES).map(([k, name]) => `<button class="theme-opt ${theme() === k ? "on" : ""}" data-theme-pick="${k}">
-      <div class="sw ${k}">${(B => ({blockbuster: `<span>${B.toUpperCase()}</span>`, nunitech: B.toLowerCase(), retro: B, atomic: `<span>${B}</span>`, horror: B.toUpperCase(), repertory: B, premiere: B})[k] || B[0])(esc(BRAND))}</div>${k === "nuniflix" ? esc(APP()) : name}</button>`).join("")}</div>` +
+      <div class="sw ${k}">${(B => ({blockbuster: `<span>${B.toUpperCase()}</span>`, nunitech: B.toLowerCase(), retro: B, atomic: `<span>${B}</span>`, horror: B.toUpperCase(), repertory: B, premiere: B, pixel: B.toUpperCase()})[k] || B[0])(esc(BRAND))}</div>${k === "nuniflix" ? esc(APP()) : name}</button>`).join("")}</div>` +
     (["movie", "tv"].some(k => ME.quota?.[k]) ? `<h2>Your requests</h2><div class="summary">${["movie", "tv"].filter(k => ME.quota[k]).map(k => {
       const q = ME.quota[k]; return `<div><span>${k === "movie" ? "Movies" : "TV"}</span><b>${Math.max(0, q.limit - q.used)} of ${q.limit} left · per ${q.days} days</b></div>`;
     }).join("")}</div>` : "");

@@ -13,7 +13,7 @@ struct ServerView: View {
 
     var body: some View {
         VStack(spacing: 30) {
-            Text(model.appTheme.uppercase ? "NUNIFLIX" : "NuniFlix").font(model.appTheme.font(64)).foregroundStyle(model.appTheme.brandColor)
+            model.appTheme.wordmark("NuniFlix", size: 64)
             Text("What's your NuniFlix address?").font(.title2)
             #if os(tvOS)
             Text("Or open NuniFlix on your iPhone on the same Wi-Fi: it'll offer to set up this TV.").font(.callout).foregroundStyle(.green)
@@ -76,8 +76,7 @@ struct SignInView: View {
             ScrollView {
                 VStack(spacing: Metrics.spacing * 2.4) {
                     VStack(spacing: 8) {
-                        Text(model.appTheme.uppercase ? model.brand.uppercased() : model.brand)
-                            .font(model.appTheme.font(logoSize)).foregroundStyle(model.appTheme.brandColor)
+                        model.appTheme.wordmark(model.brand, size: logoSize)
                         Text(model.server?.host() ?? "").font(.footnote.monospaced()).foregroundStyle(.secondary)
                     }
                     #if os(tvOS)

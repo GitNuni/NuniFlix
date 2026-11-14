@@ -16,8 +16,10 @@ struct ServiceTheme {
     var uppercase = false
     /// The NuniFlix wordmark's colour (defaults to the accent).
     var brand: Color? = nil
+    /// Pixel art behind the screens (web/theme/<art>/: sky.png along the top), loaded from the server.
+    var art: String? = nil
 
-    enum Display { case standard, condensed, serif, serifItalic, rounded, engraved }
+    enum Display { case standard, condensed, serif, serifItalic, rounded, engraved, pixel }
 
     func font(_ size: CGFloat, _ weight: Font.Weight = .black) -> Font {
         switch display {
@@ -27,6 +29,7 @@ struct ServiceTheme {
         case .serifItalic: return .system(size: size, weight: weight, design: .serif).italic()
         case .rounded: return .system(size: size, weight: weight, design: .rounded)
         case .engraved: return .system(size: size, weight: .semibold, design: .serif)
+        case .pixel: return .custom("Press Start 2P", fixedSize: (size * 0.6).rounded())  // a very wide face: smaller sizes read the same
         }
     }
 
@@ -35,8 +38,21 @@ struct ServiceTheme {
         let base = Metrics.rowTitleSize
         return Text(uppercase ? s.uppercased() : s)
             .font(display == .standard ? Metrics.rowTitle.weight(rowFont) : font(base, rowFont))
-            .tracking(display == .engraved ? 2 : (uppercase ? 0.8 : 0))
+            .tracking(display == .engraved ? 2 : (uppercase && display != .pixel ? 0.8 : 0))
             .foregroundStyle(.white)
+            .shadow(color: display == .pixel ? accent : .clear, radius: 0, x: 3, y: 3)
+    }
+
+    /// The app's name as its wordmark, in this theme's lettering. Pixel: yellow with a hard red drop, like a title screen.
+    func wordmark(_ name: String, size: CGFloat) -> some View {
+        HStack(spacing: size * 0.25) {
+            Text(uppercase ? name.uppercased() : name)
+                .font(font(size))
+                .foregroundStyle(brandColor)
+                .shadow(color: display == .pixel ? accent : .clear, radius: 0, x: size * 0.07, y: size * 0.07)
+                .shadow(color: display == .pixel ? .black : .clear, radius: 0, x: size * 0.12, y: size * 0.12)
+            if let art { ThemeSprite(path: "/theme/\(art)/popcorn.png", size: size * 0.9) }
+        }
     }
 
     var brandColor: Color { brand ?? accent }
@@ -48,7 +64,7 @@ struct ServiceTheme {
     // the web) gets a night version made from its own colours.
     static let appThemes: [(id: String, name: String)] = [
         ("nuniflix", "NuniFlix"), ("repertory", "Repertory"), ("premiere", "Premiere"), ("nunitech", "Nunitech"),
-        ("blockbuster", "Blockbuster"), ("retro", "Retro"), ("atomic", "Atomic Age"), ("horror", "Horror"),
+        ("blockbuster", "Blockbuster"), ("retro", "Retro"), ("atomic", "Atomic Age"), ("horror", "Horror"), ("pixel", "Pixel"),
     ]
 
     static func app(_ id: String?) -> ServiceTheme {
@@ -73,6 +89,10 @@ struct ServiceTheme {
         case "horror":
             return ServiceTheme(background: [Color(hex: 0x1A1410), Color(hex: 0x0B0A09)], accent: Color(hex: 0x8E1B1F), onAccent: Color(hex: 0xF3EAD8),
                                 tile: .poster, corner: 3, rowFont: .semibold, display: .engraved, uppercase: true, brand: Color(hex: 0xB8963E))
+        case "pixel":
+            return ServiceTheme(background: [Color(hex: 0x1B1446), Color(hex: 0x0A0820)], accent: Color(hex: 0xFF2E4D), onAccent: .white,
+                                tile: .poster, corner: 0, rowFont: .regular, display: .pixel, uppercase: true, brand: Color(hex: 0xFFD43B),
+                                art: "pixel")
         default:
             return .nuniflix
         }
@@ -116,6 +136,7 @@ struct ServiceTheme {
     var backgroundView: some View {
         ZStack {
             LinearGradient(colors: background, startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            if let art { ThemeArt(theme: art) }
             SeasonalLayer()  // leaves, snow… behind every screen (Seasonal.swift)
         }
     }
@@ -158,5 +179,46 @@ extension View {
         #else
         self.buttonStyle(.plain)
         #endif
+    }
+}
+
+
+/// A theme's pixel art (web/theme/<theme>/): a skyline along the top of the screen, faded into the background, with
+/// scanlines over everything. Loaded from the server like the seasonal art, so it can change without an app update.
+struct ThemeArt: View {
+    var theme: String
+    @State private var sky: UIImage?
+    var body: some View {
+        GeometryReader { g in
+            ZStack(alignment: .top) {
+                if let sky {
+                    Image(uiImage: sky).resizable().interpolation(.none).aspectRatio(contentMode: .fill)
+                        .frame(width: g.size.width, height: g.size.width * sky.size.height / max(1, sky.size.width))
+                        .mask(LinearGradient(colors: [.black, .black.opacity(0.85), .clear], startPoint: .top, endPoint: .bottom))
+                        .opacity(0.55)
+                }
+                Canvas { ctx, size in  // scanlines
+                    var y: CGFloat = 0
+                    while y < size.height { ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 2)), with: .color(.black.opacity(0.14))); y += 6 }
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .task(id: theme) { sky = await HostArt.image("/theme/\(theme)/sky.png") }
+    }
+}
+
+/// One of a theme's pixel sprites (web/theme/<theme>/), drawn with hard pixel edges.
+struct ThemeSprite: View {
+    var path: String
+    var size: CGFloat
+    @State private var img: UIImage?
+    var body: some View {
+        Group {
+            if let img { Image(uiImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit) } else { Color.clear }
+        }
+        .frame(width: size, height: size)
+        .task(id: path) { img = await HostArt.image(path) }
     }
 }

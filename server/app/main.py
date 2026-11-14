@@ -420,7 +420,7 @@ class Prefs(BaseModel):
     home: Optional[list[str]] = Field(None, max_length=10)  # Home rows, in order
     autoplay: Optional[bool] = None  # trailers play by themselves (muted) on title pages and the featured banner
     season: Optional[bool] = None  # seasonal background (leaves, snow, the odd horror cameo): web/season.js
-    theme: Optional[Literal["nuniflix", "repertory", "premiere", "nunitech", "blockbuster", "retro", "atomic", "horror"]] = None
+    theme: Optional[Literal["nuniflix", "repertory", "premiere", "nunitech", "blockbuster", "retro", "atomic", "horror", "pixel"]] = None
 
 
 @app.post("/api/me/prefs")

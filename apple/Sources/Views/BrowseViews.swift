@@ -12,8 +12,7 @@ struct ServicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Metrics.spacing) {
                 HStack {
-                    Text(model.appTheme.uppercase ? model.brand.uppercased() : model.brand)
-                        .font(model.appTheme.font(titleSize)).foregroundStyle(model.appTheme.brandColor)
+                    model.appTheme.wordmark(model.brand, size: titleSize)
                     Spacer()
                     NavigationLink(value: Route.search(nil)) { Label("Search", systemImage: "magnifyingglass") }
                     Button { settings = true } label: { Label("Settings", systemImage: "gearshape") }
@@ -103,6 +102,7 @@ struct YourFlixTile: View {
                     .frame(width: Metrics.serviceTile.height * 0.55)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(t.uppercase ? "YOURFLIX" : "YourFlix").font(t.font(Metrics.rowTitleSize * 0.85, .black)).foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.5)
                     Text("What you asked for").font(.caption).foregroundStyle(.white.opacity(0.8))
                 }
                 Spacer(minLength: 0)
@@ -110,7 +110,7 @@ struct YourFlixTile: View {
             .padding(.horizontal, 16)
         }
         .frame(width: Metrics.serviceTile.width, height: Metrics.serviceTile.height)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: t.display == .pixel ? 0 : 14, style: .continuous))
     }
 }
 
@@ -240,7 +240,7 @@ struct YourFlixView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Metrics.spacing) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(theme.uppercase ? "YOURFLIX" : "YourFlix").font(theme.font(Metrics.rowTitleSize * 2)).foregroundStyle(theme.brandColor)
+                    theme.wordmark("YourFlix", size: Metrics.rowTitleSize * 2)
                     Text(model.me.map { "\($0.name.split(separator: " ").first.map(String.init) ?? $0.name)'s channel" } ?? "Your channel")
                         .foregroundStyle(.secondary)
                 }
