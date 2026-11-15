@@ -1702,7 +1702,7 @@ async function loadHome() {
       featured: () => `<div class="bbs" id="bb" hidden></div>`,
       office: () => `<button class="ofc" id="ofCard" data-open-office><span class="ofc-bld ofc-win" aria-hidden="true">${"<i></i>".repeat(9)}</span>
         <span class="ofc-txt"><b>${esc(APP())} HQ</b><span class="ofc-live">LIVE</span><div class="ofc-sum">Peek inside the building</div></span><span class="chev">›</span></button>`,
-      live: () => NATIVE() ? "" : `<button class="ofc lvc" data-open-live><img class="lv-host" src="/host/${hostMood()}.png" alt=""><span class="ofc-txt"><b><span class="lv-dot"></span>Live TV</b>
+      live: () => NATIVE() ? "" : `<button class="ofc lvc" data-open-live>${ME.prefs?.hosts === "off" ? "" : `<img class="lv-host" src="/host/${hostMood()}.png" alt="">`}<span class="ofc-txt"><b><span class="lv-dot"></span>Live TV</b>
         <div class="ofc-sum" id="lvSum">Channels made from your library. Tune in to whatever's on.</div></span><span class="chev">›</span></button>`,
       discover: () => f.swipe || f.match ? `<div class="ctas">${f.swipe ? `<button class="cta" data-open-swipe><span class="ico">♥</span><span><b>Swipe</b><small>Trailers, one after another. Right to ${esc(W("request").toLowerCase())}.</small></span></button>` : ""}
         ${f.match ? `<button class="cta alt" data-open-match><span class="ico">⚡</span><span><b>Movie match</b><small>Send someone a link. Swipe until you both like one.</small></span></button>` : ""}</div>` : "",
@@ -3317,6 +3317,9 @@ function paneAccount(el) {
     <p class="foot">Muted, on title pages and the banner at the top of Home. Tap the speaker for sound.</p>
     <h2>Seasonal effects</h2><form class="form" id="fSeason"><label><span style="width:auto">Falling leaves, snow… and the odd visitor</span>${swi("season", ME.prefs.season !== false)}</label></form>
     <p class="foot">Quietly behind everything: leaves in the fall, snow at Christmas. Keep an eye on the bottom of the screen around the holidays. Off automatically if your device is set to reduce motion.</p>
+    <h2>Live TV hosts</h2><div class="chips" id="fHosts">${[["both", "Vesper & Lucy"], ["vesper", "Just Vesper"], ["off", "Off"]].map(([k, t]) =>
+      `<button data-hosts="${k}" class="${(ME.prefs.hosts || "both") === k ? "on" : ""}">${t}</button>`).join("")}</div>
+    <p class="foot">Vesper introduces the shows on Live TV, and her sister Lucy drops in now and then. Same setting on the Apple TV.</p>
     <h2>Theme</h2><div class="themes">${Object.entries(THEMES).map(([k, name]) => `<button class="theme-opt ${theme() === k ? "on" : ""}" data-theme-pick="${k}">
       <div class="sw ${k}">${(B => ({blockbuster: `<span>${B.toUpperCase()}</span>`, nunitech: B.toLowerCase(), retro: B, atomic: `<span>${B}</span>`, horror: B.toUpperCase(), repertory: B, premiere: B, pixel: B.toUpperCase()})[k] || B[0])(esc(BRAND))}</div>${k === "nuniflix" ? esc(APP()) : name}</button>`).join("")}</div>` +
     (["movie", "tv"].some(k => ME.quota?.[k]) ? `<h2>Your requests</h2><div class="summary">${["movie", "tv"].filter(k => ME.quota[k]).map(k => {
@@ -3326,6 +3329,9 @@ function paneAccount(el) {
   wireHomeLayout();
   $("#fSeason [name=season]").onchange = e => { window.NFSeason?.set(e.target.checked);
     api("/me/prefs", {body: {season: e.target.checked}}).then(() => { ME.prefs.season = e.target.checked; }).catch(err => toast(err.message)); };
+  $("#fHosts").onclick = e => { const b = e.target.closest("[data-hosts]"); if (!b) return;
+    $$("#fHosts button").forEach(x => x.classList.toggle("on", x === b));
+    api("/me/prefs", {body: {hosts: b.dataset.hosts}}).then(() => { ME.prefs.hosts = b.dataset.hosts; }).catch(err => toast(err.message)); };
   $("#fAuto [name=autoplay]").onchange = e => api("/me/prefs", {body: {autoplay: e.target.checked}}).then(() => { ME.prefs.autoplay = e.target.checked; }).catch(err => toast(err.message));
   $("#signOut").onclick = async () => { await api("/auth/logout", {method: "POST"}).catch(() => {}); location.reload(); };
   renderAccounts();

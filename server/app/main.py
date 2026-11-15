@@ -203,6 +203,43 @@ def login_plex_check(body: PlexCheck, request: Request):
     return _plex_signed_in(ident, body, request)
 
 
+class ProfileSwitch(BaseModel):
+    user: str = Field(max_length=40)
+    pin: Optional[str] = Field(None, max_length=12)
+    device: Optional[str] = Field(None, max_length=80)
+
+
+@app.get("/api/profiles")
+def profiles(user=Depends(current_user)):
+    """Who's watching? The other profiles in the owner's Plex Home, for someone signed in as one of them."""
+    try:
+        return {"profiles": accounts.home_profiles([i["id"] for i in store.identities(user["id"])])}
+    except (httpx.HTTPError, accounts.LoginError):
+        return {"profiles": []}
+
+
+@app.post("/api/profiles/switch")
+def profile_switch(body: ProfileSwitch, request: Request, user=Depends(current_user)):
+    """Become another profile of the Plex Home on this device: a fresh session as them, and this one ends."""
+    ip = client_ip(request)
+    if accounts.too_many(ip):
+        raise HTTPException(429, "Too many tries. Wait 15 minutes.")
+    try:
+        ident = accounts.home_switch([i["id"] for i in store.identities(user["id"])], body.user, body.pin)
+    except accounts.LoginError as e:
+        if str(e) == "Wrong PIN.":
+            accounts.failed(ip)
+        raise
+    new = store.login_identity(ident)
+    if new["blocked"]:
+        raise HTTPException(403, "This account is blocked.")
+    token, _ = _token(request)
+    resp = signed_in(request, new, body.device or "Apple TV", ident["id"])
+    if token:
+        store.end_session(token)
+    return resp
+
+
 @app.post("/api/auth/plex/pick")
 def login_plex_pick(body: PlexPick, request: Request):
     return _plex_signed_in(_plex_pick(body, request), body, request)
@@ -458,6 +495,7 @@ class Prefs(BaseModel):
     home: Optional[list[str]] = Field(None, max_length=16)  # Home rows, in order
     autoplay: Optional[bool] = None  # trailers play by themselves (muted) on title pages and the featured banner
     season: Optional[bool] = None  # seasonal background (leaves, snow, the odd horror cameo): web/season.js
+    hosts: Optional[Literal["both", "vesper", "off"]] = None  # Live TV hosts: Vesper and her sister Lucy, just Vesper, or nobody
     theme: Optional[Literal["nuniflix", "repertory", "premiere", "nunitech", "blockbuster", "retro", "atomic", "horror", "pixel"]] = None
 
 

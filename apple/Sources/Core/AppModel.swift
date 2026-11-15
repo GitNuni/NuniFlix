@@ -7,6 +7,8 @@ final class AppModel: ObservableObject {
     @Published var server: URL?
     @Published var signedIn = false
     @Published var me: Me?
+    @Published var profiles: [PlexProfile] = []   // the owner's Plex Home, when this person is one of its profiles
+    @Published var choosingProfile = false         // "Who's watching?" is up
     @Published var brand = "NuniFlix"
     /// The service being browsed: title pages opened from it keep its colours.
     @Published var theme = ServiceTheme.nuniflix
@@ -67,17 +69,30 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "server")
     }
 
-    func didSignIn(_ data: Data) throws {
+    /// askProfile: after a real sign-in, a Plex Home gets "Who's watching?" (not after switching profile, obviously).
+    func didSignIn(_ data: Data, askProfile: Bool = true) throws {
         let s: SignedIn = try API.shared.decode(data)
         Keychain.set("token", s.token)
         API.shared.token = s.token
         signedIn = true
         Self.shareWithTopShelf()
-        Task { await loadMe() }
+        Task {
+            await loadMe()
+            await loadProfiles()
+            #if os(tvOS)
+            if askProfile && profiles.count > 1 { choosingProfile = true }
+            #endif
+        }
+    }
+
+    func loadProfiles() async {
+        let p: PlexProfiles? = try? await API.shared.get("/profiles")
+        profiles = p?.profiles ?? []
     }
 
     func loadMe() async {
         me = try? await API.shared.get("/me")
+        if profiles.isEmpty { Task { await loadProfiles() } }  // for Settings → Switch profile
         if let t = me?.prefs?.theme { themeID = t }
         if let me { UserDefaults.standard.set(me.prefs?.season ?? true, forKey: "season") }  // seasonal background, on unless turned off
         if let o: AuthOptions = try? await API.shared.get("/auth/options"), let n = o.name, !n.isEmpty {
@@ -95,6 +110,8 @@ final class AppModel: ObservableObject {
         API.shared.token = nil
         signedIn = false
         me = nil
+        profiles = []
+        choosingProfile = false
         Self.shareWithTopShelf()
     }
 }

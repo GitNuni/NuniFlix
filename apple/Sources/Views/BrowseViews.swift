@@ -979,6 +979,18 @@ struct SettingsView: View {
                     Text("For NuniFlix's own screens. Browsing a service keeps that service's look. Same theme as on the website.")
                 }
                 Section {
+                    Picker("Live TV hosts", selection: Binding(get: { model.me?.prefs?.hosts ?? "both" }, set: { v in
+                        model.me?.prefs?.hosts = v
+                        Task { _ = try? await API.shared.post("/me/prefs", ["hosts": v]) }
+                    })) {
+                        Text("Vesper & Lucy").tag("both")
+                        Text("Just Vesper").tag("vesper")
+                        Text("Off").tag("off")
+                    }
+                } footer: {
+                    Text("Vesper introduces the shows on Live TV, and her sister Lucy drops in now and then. Same setting as on the website.")
+                }
+                Section {
                     Toggle("Seasonal effects", isOn: Binding(get: { UserDefaults.standard.object(forKey: "season") as? Bool ?? true },
                                                              set: { v in UserDefaults.standard.set(v, forKey: "season"); seasonTick.toggle()
                                                                  Task { _ = try? await API.shared.post("/me/prefs", ["season": v]) } }))
@@ -986,6 +998,15 @@ struct SettingsView: View {
                 } footer: {
                     Text("Falling leaves, snow… and the odd visitor around the holidays. Same setting as on the website.")
                 }
+                #if os(tvOS)
+                if model.profiles.count > 1 {
+                    Section {
+                        Button("Switch profile") { dismiss(); model.choosingProfile = true }
+                    } footer: {
+                        Text("Signed in as \(model.profiles.first { $0.current }?.name ?? model.me?.name ?? "you"). Your Plex Home's other profiles.")
+                    }
+                }
+                #endif
                 Section {
                     Button("Sign out", role: .destructive) { Task { await model.signOut(); dismiss() } }
                     Button("Use a different server") { Task { await model.clearServer(); dismiss() } }

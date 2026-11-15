@@ -13,6 +13,7 @@ struct Me: Decodable {
     struct Prefs: Decodable {
         var theme: String?
         var season: Bool?
+        var hosts: String?   // Live TV hosts: "both" (Vesper and Lucy), "vesper", "off"
     }
 
     struct Perms: Decodable {

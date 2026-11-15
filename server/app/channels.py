@@ -372,7 +372,9 @@ def lineup(user, hours=4, tz=None):
         raise NoChannels(f"Not enough on your {store.SOURCES[src]} to make channels yet.")
     hour = _local_hour(now, tz)
     wd = _local_date(now, tz).weekday() if tz is not None else None
-    return {"now": now, "source": src, "channels": out, "takeover": tk, "host": host.greeting(hour, tk, user["id"], wd)}
+    cast = store.prefs(user).get("hosts", "both")  # Settings: Vesper and Lucy, just Vesper, or no hosts
+    return {"now": now, "source": src, "channels": out, "takeover": tk,
+            "host": None if cast == "off" else host.greeting(hour, tk, user["id"], wd, lucy=cast == "both")}
 
 
 def _local_hour(now, tz):
@@ -401,6 +403,7 @@ def tune(user, key, tz=None, platform=None):
     name = TAKEOVERS[tk][0] if tk else ch[1]
     offset = now - cur[1]
     stream = None
+    cast = store.prefs(user).get("hosts", "both")
     if platform and offset > -2:
         try:
             stream = player.start(user, cur[0]["id"], 0, platform, live=True, at=max(0.0, offset))
@@ -408,4 +411,4 @@ def tune(user, key, tz=None, platform=None):
             pass  # the app starts it itself (and shows the error)
     return {"now": now, "program": _shape(cur), "offset": offset, "next": _shape(nxt) if nxt else None, "stream": stream,
             "channel": {"key": key, "name": name, "tagline": TAKEOVERS[tk][1] if tk else ch[2], "takeover": tk},
-            "host": host.line(_shape(cur), name, _local_hour(now, tz), offset, tk, user["id"], key)}
+            "host": None if cast == "off" else host.line(_shape(cur), name, _local_hour(now, tz), offset, tk, user["id"], key, lucy=cast == "both")}

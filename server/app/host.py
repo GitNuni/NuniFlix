@@ -258,14 +258,14 @@ def _greetings(hour, weekday):
     return m, lines
 
 
-def greeting(hour, takeover=None, who=None, weekday=None):
+def greeting(hour, takeover=None, who=None, weekday=None, lucy=True):
     """What she says at the top of the guide: {name, mood, line, lines}; clients cycle through `lines`."""
     m, lines = _greetings(hour, weekday)
     out = _pick(lines, who, 6)
     if takeover in TAKEOVER:
         out = _pick(TAKEOVER[takeover][m], who, 1) + out[:4]
     res = {"name": NAME, "mood": m, "line": out[0], "lines": out}
-    if random.random() < DUO:
+    if lucy and random.random() < DUO:
         scenes = banter.SCENES[m] + (banter.TAKEOVER.get(takeover, []) * 3)
         _duo(res, m, _scene(scenes, who))
     return res
@@ -290,7 +290,7 @@ def _fresh(options, who):
         return [o for o in options if o not in seen]
 
 
-def line(program, channel_name, hour, offset, takeover=None, who=None, channel_key=None):
+def line(program, channel_name, hour, offset, takeover=None, who=None, channel_key=None, lucy=True):
     """What Vesper says when you tune in: an intro if the programme hasn't started (offset < 0), else a welcome. Now and
     then a line about the channel itself, or the takeover (only ones she hasn't said to this person lately)."""
     m = mood(hour)
@@ -306,7 +306,7 @@ def line(program, channel_name, hour, offset, takeover=None, who=None, channel_k
     else:
         text = _pick(JOIN[m], who)[0].format(t=_title(program), ch=channel_name, m=max(1, int(offset // 60)))
     res = {"name": NAME, "mood": m, "line": text}
-    if random.random() < DUO:
+    if lucy and random.random() < DUO:
         fmt = {"t": _title(program), "ch": channel_name, "m": max(1, int(offset // 60))}
         scenes = (banter.INTRO if offset < 0 else banter.JOIN)[m]
         if takeover in banter.TAKEOVER and random.random() < 0.4:

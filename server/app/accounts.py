@@ -176,31 +176,68 @@ def plex_pick(state, user_id, pin=None):
     if me.status_code == 200 and str(me.json().get("id")) == who["id"]:  # the account that signed in: no switch needed
         ident = _plex_identity(token)
     else:
-        params = {"pin": pin} if pin else {}
         try:
-            sw = _http.post(PLEX_TV.rsplit("/api/v2", 1)[0] + f"/api/home/users/{who['id']}/switch", params=params,
-                            headers={**_plex_headers(token), "Accept": "application/xml"})
-        except httpx.HTTPError:
-            raise LoginError("Plex didn't respond.")
-        if sw.status_code in (401, 403):
-            entry["tries"] = entry.get("tries", 0) + 1
-            if entry["tries"] >= 5:  # this sign-in is done: start again
-                with _pins_lock:
-                    _picks.pop(state, None)
-            raise LoginError("Wrong PIN." if who["pin"] else "Plex wouldn't switch to that profile.")
-        if sw.status_code not in (200, 201):
-            raise LoginError("Plex wouldn't switch to that profile.")
-        try:
-            el = ET.fromstring(sw.text)
-            sub = el.get("authenticationToken") or el.get("authToken")
-        except ET.ParseError:
-            sub = None
-        if not sub:
-            raise LoginError("Plex wouldn't switch to that profile.")
-        ident = _plex_identity(sub, admin=who["admin"])
+            ident = _plex_identity(_switch(token, who, pin), admin=who["admin"])
+        except LoginError as e:
+            if str(e) == "Wrong PIN.":
+                entry["tries"] = entry.get("tries", 0) + 1
+                if entry["tries"] >= 5:  # this sign-in is done: start again
+                    with _pins_lock:
+                        _picks.pop(state, None)
+            raise
     with _pins_lock:
         _picks.pop(state, None)
     return ident
+
+
+def _switch(token, who, pin=None):
+    """A Plex token for another profile in the same Plex Home (Plex checks the PIN)."""
+    import xml.etree.ElementTree as ET
+    try:
+        sw = _http.post(PLEX_TV.rsplit("/api/v2", 1)[0] + f"/api/home/users/{who['id']}/switch", params={"pin": pin} if pin else {},
+                        headers={**_plex_headers(token), "Accept": "application/xml"})
+    except httpx.HTTPError:
+        raise LoginError("Plex didn't respond.")
+    if sw.status_code in (401, 403):
+        raise LoginError("Wrong PIN." if who["pin"] else "Plex wouldn't switch to that profile.")
+    if sw.status_code not in (200, 201):
+        raise LoginError("Plex wouldn't switch to that profile.")
+    try:
+        el = ET.fromstring(sw.text)
+        sub = el.get("authenticationToken") or el.get("authToken")
+    except ET.ParseError:
+        sub = None
+    if not sub:
+        raise LoginError("Plex wouldn't switch to that profile.")
+    return sub
+
+
+# ---------- switching profile later (the Apple TV's "Who's watching?") ----------
+# Done with the owner's Plex token (kept from their sign-in), so it covers the owner's own Plex Home: the family on
+# the couch. Only someone signed in as one of that Home's profiles can see or switch to the others.
+def home_profiles(identity_ids):
+    """The owner's Plex Home profiles, if one of these identities is in it (and there's more than one). Else []."""
+    tok = store.config()["plex"].get("token")
+    if not tok:
+        return []
+    users = _home_users(tok)
+    mine = {i.split(":", 1)[1] for i in identity_ids if i.startswith("plex:")}
+    if len(users) < 2 or not mine & {u["id"] for u in users}:
+        return []
+    return [{**{k: u[k] for k in ("id", "name", "thumb", "pin", "admin", "kid")}, "current": u["id"] in mine} for u in users]
+
+
+def home_switch(identity_ids, user_id, pin=None):
+    """Identity for another profile in the owner's Plex Home (checked like home_profiles; Plex checks the PIN)."""
+    tok = store.config()["plex"].get("token")
+    who = next((u for u in home_profiles(identity_ids) if u["id"] == str(user_id)), None)
+    if not tok or not who:
+        raise LoginError("That profile isn't in this Plex Home.")
+    if who["admin"]:  # the owner: their own token, after Plex has checked the PIN if there is one
+        if who["pin"]:
+            _switch(tok, who, pin)
+        return _plex_identity(tok, admin=True)
+    return _plex_identity(_switch(tok, who, pin), admin=False)
 
 
 def _plex_identity(token, admin=True):

@@ -110,13 +110,16 @@ private enum Guide {
 // MARK: home tile
 
 struct LiveTile: View {
+    @EnvironmentObject var model: AppModel
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: 0x0A1034), Color(hex: 0x24308C)], startPoint: .topLeading, endPoint: .bottomTrailing)
             // scanlines
             VStack(spacing: 3) { ForEach(0..<60, id: \.self) { _ in Color.black.opacity(0.18).frame(height: 1) } }
-            HostSprite(mood: HostSays.moodNow, talking: false, size: Metrics.serviceTile.height * 0.95)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).offset(x: 10, y: 8)
+            if model.me?.prefs?.hosts != "off" {
+                HostSprite(mood: HostSays.moodNow, talking: false, size: Metrics.serviceTile.height * 0.95)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).offset(x: 10, y: 8)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Circle().fill(.red).frame(width: 12, height: 12).shadow(color: .red, radius: 6)

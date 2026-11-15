@@ -32,6 +32,9 @@ struct RootView: View {
                 SignInView()
             } else {
                 MainView()
+                    #if os(tvOS)
+                    .fullScreenCover(isPresented: $model.choosingProfile) { ProfilePicker() }
+                    #endif
             }
         }
         .animation(.default, value: model.signedIn)
@@ -84,7 +87,15 @@ struct MainView: View {
         .onAppear { if ProcessInfo.processInfo.environment["NF_ROUTE"] == "office" { path.append(Route.office) }
                               if ProcessInfo.processInfo.environment["NF_ROUTE"] == "live" { path.append(Route.live) }
                               if let r = ProcessInfo.processInfo.environment["NF_ROUTE"], r.hasPrefix("shelf:") {
-                                  let k = String(r.dropFirst(6)); path.append(Route.shelf(Shelf(key: k, title: k.capitalized, art: "/shelves/\(k).png"))) } }  // simulator previews only
+                                  let k = String(r.dropFirst(6)); path.append(Route.shelf(Shelf(key: k, title: k.capitalized, art: "/shelves/\(k).png"))) }
+                              #if os(tvOS)
+                              if ProcessInfo.processInfo.environment["NF_ROUTE"] == "profiles" {  // a made-up Plex Home
+                                  model.profiles = [PlexProfile(id: "1", name: "Juan", pin: false, admin: true, kid: false, current: true),
+                                                    PlexProfile(id: "2", name: "Kiddo", pin: false, admin: false, kid: true, current: false),
+                                                    PlexProfile(id: "3", name: "Mum", pin: true, admin: false, kid: false, current: false)]
+                                  model.choosingProfile = true }
+                              #endif
+                          }  // simulator previews only
         #endif
         .onOpenURL { url in  // nuniflix://item/movie/603 (Top Shelf)
             let parts = url.pathComponents.filter { $0 != "/" }
