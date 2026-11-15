@@ -680,6 +680,17 @@ def library_rows(genre: Optional[str] = Query(None, max_length=60), user=Depends
     return library.rows(user, genre)
 
 
+@app.get("/api/library/source")
+def library_source(user=Depends(current_user)):
+    """Which of the owner's servers this person watches from ({source, name}), for the Plex/Jellyfin tile. Nulls when
+    they haven't linked one (the tile doesn't show)."""
+    try:
+        src = player._access(user)[0]
+    except player.PlayError:
+        return {"source": None, "name": None}
+    return {"source": src, "name": store.SOURCES[src]}
+
+
 @app.get("/api/library")
 def library_page(type: Literal["movie", "tv", "all"] = "all", genre: Optional[str] = Query(None, max_length=60),
                  page: int = Query(1, ge=1, le=500), user=Depends(current_user)):

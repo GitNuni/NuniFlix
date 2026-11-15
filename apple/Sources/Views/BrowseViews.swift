@@ -8,6 +8,7 @@ struct ServicesView: View {
     @State private var loaded = false
     @State private var settings = false
     @State private var shelves: [Shelf] = []
+    @State private var lib: LibrarySource?   // their own Plex/Jellyfin, as the first Streaming tile
 
     /// A heading over a grid of tiles: YourFlix, Seasonal genres, Streaming.
     private func section<C: View>(_ title: String, @ViewBuilder _ tiles: () -> C) -> some View {
@@ -49,8 +50,11 @@ struct ServicesView: View {
                         }
                     }
                 }
-                if !providers.isEmpty {
+                if !providers.isEmpty || lib?.source != nil {
                     section("Streaming") {
+                        if let lib, lib.source != nil {
+                            NavigationLink(value: Route.library(nil)) { LibraryTile(source: lib) }.cardButton()
+                        }
                         ForEach(providers) { p in
                             NavigationLink(value: Route.service(p)) { ServiceTile(provider: p) }.cardButton()
                         }
@@ -89,12 +93,46 @@ struct ServicesView: View {
 
     private func load() async {
         async let sh: ShelfList? = try? API.shared.get("/shelves")
+        async let ls: LibrarySource? = try? API.shared.get("/library/source")
         do {
             let p: Providers = try await API.shared.get("/browse/providers")
             providers = p.providers; error = nil
         } catch { self.error = error.localizedDescription }
         shelves = await sh?.shelves ?? []
+        lib = await ls
+        if lib?.source != nil, providers.isEmpty { error = nil }  // the tile still works without TMDB
         loaded = true
+    }
+}
+
+/// Which of the owner's servers this person watches from (server: /api/library/source).
+struct LibrarySource: Decodable { var source: String?; var name: String? }
+
+/// Their own Plex or Jellyfin as a streaming tile: everything on it, played right here, no switching apps.
+struct LibraryTile: View {
+    var source: LibrarySource
+    var body: some View {
+        let plex = source.source == "plex"
+        ZStack {
+            if plex {
+                LinearGradient(colors: [Color(hex: 0x282A2D), Color(hex: 0x1F1F1F)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            } else {
+                LinearGradient(colors: [Color(hex: 0xAA5CC3), Color(hex: 0x00A4DC)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+            HStack(spacing: 14) {
+                Text(plex ? "❯" : "▲").font(.system(size: Metrics.serviceTile.height * 0.4, weight: .black))
+                    .foregroundStyle(plex ? Color(hex: 0xE5A00D) : .white)
+                    .frame(width: Metrics.serviceTile.height * 0.55)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.name ?? "Your library").font(.headline).foregroundStyle(.white)
+                    Text("Your library").font(.caption).foregroundStyle(.white.opacity(0.7))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(width: Metrics.serviceTile.width, height: Metrics.serviceTile.height)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

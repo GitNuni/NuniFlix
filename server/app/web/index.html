@@ -429,6 +429,19 @@ details.adm .form{margin:0;border-radius:0;background:none;border-top:.5px solid
 .shelf .sh-now{position:absolute;top:8px;right:8px;z-index:1;font-style:normal;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
   background:var(--accent);color:#fff;padding:3px 7px;border-radius:5px}
 .shelf:active{transform:scale(.97)}
+/* your own Plex/Jellyfin, as a tile and a page */
+.lib-ic{display:grid!important;place-items:center;font-weight:900;font-size:clamp(30px,8vw,44px);line-height:1}
+.lib-ic.plex{background:#1f1f1f!important;color:#e5a00d}
+.lib-ic.jellyfin{background:linear-gradient(135deg,#aa5cc3,#00a4dc)!important;color:#fff}
+.lib-ic small{font-size:.32em;font-weight:800;letter-spacing:.04em;margin-top:-.5em}
+.lib-hero{position:relative;margin:8px 0 6px;aspect-ratio:2.4/1;min-height:170px;border-radius:calc(var(--radius) + 2px);overflow:hidden;background:#111}
+.lib-hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.lib-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.1) 30%,rgba(0,0,0,.85))}
+.lib-hero div{position:absolute;left:16px;right:16px;bottom:14px;z-index:1;color:#fff;display:flex;align-items:flex-end;gap:12px}
+.lib-hero .lib-ic{width:54px;height:54px;border-radius:22%;flex:none;font-size:30px}
+.lib-hero h1{margin:0;font-size:clamp(24px,6vw,38px);font-weight:900;line-height:1.05}
+.lib-hero p{margin:3px 0 0;opacity:.85;font-size:14px}
+.lib-more{display:block;margin:18px auto}
 .shelf-hero{position:relative;margin:8px 0 6px;aspect-ratio:2.4/1;border-radius:calc(var(--radius) + 2px);overflow:hidden;background:#0b0b12}
 .shelf-hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
 .shelf-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 35%,rgba(0,0,0,.8))}
@@ -1446,14 +1459,16 @@ async function loadBrowse() {
   try { BROWSE = await api("/browse/providers"); renderBrowse(); }
   catch (e) { $("#browseBody").innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
 }
+let LIBTILE = "";
 function renderBrowse() {
   const b = BROWSE;
+  if (!LIBTILE) libSource().then(l => { if (l.source && !LIBTILE) { LIBTILE = libTile(l); $("#browseBody .services")?.insertAdjacentHTML("afterbegin", LIBTILE); } });
   if (!b.enabled) {
     $("#browseBody").innerHTML = `<p class="empty">Streaming services aren't set up yet.${ME.owner ? `<br><br><button class="btn gray" data-goto="you">Add a TMDB key in Settings</button>` : ""}</p>`;
     return;
   }
   $("#browseBody").innerHTML =
-    `<div class="services">${b.providers.map(p => `<button class="svc" data-prov="${p.id}">
+    `<div class="services">${LIBTILE}${b.providers.map(p => `<button class="svc" data-prov="${p.id}">
       ${p.logo ? `<img data-src="${esc(p.logo)}" alt="">` : `<div class="ph"></div>`}<span>${esc(p.name)}</span></button>`).join("")}</div>` +
     (b.trending.length ? `<h2>Trending this week</h2><div class="row">${b.trending.map(tile).join("")}</div>` : "");
 }
@@ -1599,9 +1614,60 @@ async function loadShelf(key) {
   } catch (e) { $("#homeBody .spin").outerHTML = `<p class="empty">${esc(e.message)}</p>`; }
 }
 
+/* ---------- your own Plex/Jellyfin (server: library.py): a tile in Streaming, and its page, so nobody has to leave for
+   the Plex or Jellyfin app. Everything on it plays in NuniFlix's own player. ---------- */
+let LIBSRC = null;
+const libSource = () => LIBSRC ||= api("/library/source", {quiet: true}).catch(() => ({source: null}));
+const libMark = src => src === "plex" ? "❯" : "▲";
+const libTile = s => `<button class="svc" data-lib><div class="ph lib-ic ${esc(s.source)}">${libMark(s.source)}</div><span>${esc(s.name)}</span></button>`;
+document.addEventListener("click", e => {
+  if (e.target.closest("[data-lib]")) return nav({tab: "home", view: "library", cat: null});
+  const g = e.target.closest("[data-libg]"); if (g) return nav({tab: "home", view: "library", cat: g.dataset.libg});
+  const a = e.target.closest("[data-liball]"); if (a) return nav({tab: "home", view: "libgrid", cat: CUR.cat || null, kind: a.dataset.liball});
+});
+async function loadLibrary(genre) {
+  $("#homeBody").innerHTML = `<button class="back" data-home-back>‹ ${genre ? "Back" : "Home"}</button><div class="spin"></div>`;
+  $("[data-home-back]").onclick = back;
+  try {
+    const d = await api("/library/rows" + (genre ? `?genre=${encodeURIComponent(genre)}` : ""));
+    if (CUR.view !== "library" || (CUR.cat || null) !== (genre || null)) return;
+    const h = d.hero, kinds = {added: "all", movies: "movie", shows: "tv"};
+    $("#homeBody .spin").outerHTML = `<div class="lib-hero">${h?.backdrop ? `<img src="${esc(h.backdrop)}" alt="">` : ""}
+        <div><span class="lib-ic ${esc(d.source)}">${libMark(d.source)}</span><span><h1>${genre ? esc(genre) : `Everything on ${esc(d.name)}`}</h1>
+        <p>${genre ? `On ${esc(d.name)}. ` : ""}Ready to watch, right here.</p></span></div></div>` +
+      (d.genres?.length ? `<div class="chips">${d.genres.map(g => `<button data-libg="${esc(g.key)}">${esc(g.title)}</button>`).join("")}</div>` : "") +
+      (d.rows.some(r => r.items.length) ? d.rows.filter(r => r.items.length).map(r => `<h2>${esc(r.title)}${kinds[r.key] ? ` <small><button class="see" data-liball="${kinds[r.key]}">See all</button></small>` : ""}</h2>
+        <div class="row">${r.items.map(tile).join("")}</div>`).join("") : `<p class="empty">Nothing here yet.</p>`);
+  } catch (e) { $("#homeBody .spin").outerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+}
+async function loadLibGrid(genre, kind) {
+  const label = {movie: "Movies", tv: "Shows", all: "Recently added"}[kind] || "Everything";
+  $("#homeBody").innerHTML = `<button class="back" data-home-back>‹ Back</button><h2>${esc(genre ? `${genre}: ${label.toLowerCase()}` : label)}</h2>
+    <div class="grid" id="libGrid"></div><div class="spin"></div>`;
+  $("[data-home-back]").onclick = back;
+  let page = 0;
+  const more = async () => {
+    page++;
+    try {
+      const d = await api(`/library?type=${kind}&page=${page}` + (genre ? `&genre=${encodeURIComponent(genre)}` : ""));
+      if (CUR.view !== "libgrid" || !$("#libGrid")) return;
+      $("#libGrid").insertAdjacentHTML("beforeend", d.results.map(tile).join(""));
+      $("#homeBody .spin, #homeBody .lib-more")?.remove();
+      if (!d.results.length && page === 1) $("#libGrid").outerHTML = `<p class="empty">Nothing here yet.</p>`;
+      else if (d.total_pages > page) {
+        $("#homeBody").insertAdjacentHTML("beforeend", `<button class="btn gray lib-more">Show more</button>`);
+        $("#homeBody .lib-more").onclick = e => { e.target.outerHTML = `<div class="spin"></div>`; more(); };
+      }
+    } catch (e) { $("#homeBody .spin")?.remove(); toast(e.message); }
+  };
+  more();
+}
+
 /* ---------- home ---------- */
 async function loadHome() {
   if (CUR.view === "shelf") return loadShelf(CUR.cat);
+  if (CUR.view === "library") return loadLibrary(CUR.cat);
+  if (CUR.view === "libgrid") return loadLibGrid(CUR.cat, CUR.kind || "all");
   if (CUR.view === "movie" || CUR.view === "tv") {  // "See all" on a home row
     const k = CUR.view;
     $("#homeBody").innerHTML = `<button class="back" data-home-back>‹ Home</button><h2>${k === "movie" ? "Now playing" : "New episodes"}</h2><div class="spin"></div>`;
@@ -1674,11 +1740,11 @@ async function loadHome() {
     if (layout.includes("shelves")) api("/shelves", {quiet: true}).then(d => {
       if ($("#shelfRow")) $("#shelfRow").innerHTML = d.shelves.map(shelfTile).join("");
     }).catch(() => $("#shelfRow")?.remove());
-    if (layout.includes("streaming")) api("/browse/providers", {quiet: true}).then(b => {
-      if ($("#svcRow") && b.enabled) $("#svcRow").innerHTML = b.providers.map(p => `<button class="svc" data-prov="${p.id}">
-        ${p.logo ? `<img data-src="${esc(p.logo)}" alt="">` : `<div class="ph"></div>`}<span>${esc(p.name)}</span></button>`).join("");
-      else $("#svcRow")?.remove();
-    }).catch(() => $("#svcRow")?.remove());
+    if (layout.includes("streaming")) Promise.all([api("/browse/providers", {quiet: true}).catch(() => ({enabled: false})), libSource()]).then(([b, lib]) => {
+      const html = (lib.source ? libTile(lib) : "") + (b.enabled ? b.providers.map(p => `<button class="svc" data-prov="${p.id}">
+        ${p.logo ? `<img data-src="${esc(p.logo)}" alt="">` : `<div class="ph"></div>`}<span>${esc(p.name)}</span></button>`).join("") : "");
+      if ($("#svcRow") && html) $("#svcRow").innerHTML = html; else $("#svcRow")?.remove();
+    });
     if (layout.includes("trending")) api("/browse/providers").then(b => {
       if ($("#trendRow") && b.enabled && b.trending.length) $("#trendRow").innerHTML = `<h2>Top 10 this week</h2>
         <div class="row top10">${b.trending.slice(0, 10).map((x, i) => `<div class="t10"><span class="t10n" aria-hidden="true">${i + 1}</span>${tile(x)}</div>`).join("")}</div>`;
@@ -3154,7 +3220,7 @@ async function renderAccounts() {
     }
   };
 }
-async function linked(msg = "Linked") { ME = await api("/me"); toast(msg); loadYou(); }
+async function linked(msg = "Linked") { LIBSRC = null; LIBTILE = ""; ME = await api("/me"); toast(msg); loadYou(); }
 
 /* ---------- phone notifications ---------- */
 const b64u = s => Uint8Array.from(atob((s + "===".slice((s.length + 3) % 4)).replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
@@ -4007,6 +4073,7 @@ async function start() {
   const qp = new URLSearchParams(location.search), shelfLink = qp.get("shelf");  // /?office opens HQ, /?shelf=kids opens that shelf
   if (qp.has("office")) { s = {tab: "home", depth: 0, office: true}; history.replaceState(null, "", "/"); }
   else if (shelfLink && /^[a-z]{1,20}$/.test(shelfLink)) { s = {tab: "home", depth: 0, view: "shelf", cat: shelfLink}; history.replaceState(null, "", "/"); }
+  else if (qp.has("library")) { s = {tab: "home", depth: 0, view: "library", cat: null}; history.replaceState(null, "", "/"); }  // /?library: your Plex/Jellyfin
   history.replaceState(s, ""); CUR = {tab: null, depth: 0}; apply(s, true);
   refreshBadge(); setInterval(refreshBadge, 60000);
 }
