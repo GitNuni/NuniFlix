@@ -115,6 +115,19 @@ h2 small{font-size:15px;font-weight:400;color:var(--text2)}
 .btn.plex{background:#e5a00d;color:#1f1f1f}
 .btn[disabled]{opacity:.45;pointer-events:none}
 
+/* Plex Home: "who's watching?" after Plex sign-in */
+.who{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:16px;backdrop-filter:blur(6px)}
+.who .card{background:var(--bg);border-radius:16px;padding:22px 18px;width:min(520px,100%);max-height:90dvh;overflow:auto;text-align:center}
+.who h2{margin:0 0 4px;text-align:center;justify-content:center} .who .muted{margin:0 0 18px}
+.who .ppl{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:14px}
+.who .p{background:none;border:0;color:inherit;font:inherit;cursor:pointer;display:grid;justify-items:center;gap:6px;padding:6px;border-radius:12px}
+.who .p:hover,.who .p:focus-visible{background:var(--card,rgba(127,127,127,.12));outline:none}
+.who .av{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;font-size:28px;font-weight:800;color:#1f1f1f;background:#e5a00d;background-size:cover;background-position:center}
+.who .nm{font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who .tg{font-size:11px;opacity:.65}
+.who form{display:grid;gap:10px;justify-items:center;margin-top:16px}
+.who input{text-align:center;letter-spacing:.5em;font-size:22px;width:9em}
+:root[data-theme="pixel"] .who .card,:root[data-theme="pixel"] .who .av{border-radius:0}
 /* sheet */
 .scrim{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.4);opacity:0;transition:opacity .25s;pointer-events:none}
 .scrim.on{opacity:1;pointer-events:auto}
@@ -3436,21 +3449,64 @@ async function popupSignIn(prefix) {
   try {
     const {state, url} = await api(prefix + "/start", {body: {}, quiet: true});
     if (win) win.location = url; else location.href = url;
-    const check = () => api(prefix + "/check", {body: {state, device: device()}, quiet: true});
+    const plex = prefix.endsWith("/plex");
+    const check = () => api(prefix + "/check", {body: {state, device: device(), pick: plex}, quiet: true});
+    const done = r => r.pick ? whoPick(prefix, r) : r;  // a Plex Home: choose the profile first
     const t0 = Date.now();
     while (Date.now() - t0 < 300000) {
       await new Promise(r => setTimeout(r, 1500));
       const r = await check();
-      if (r._status === 200) { win?.close(); return r; }
+      if (r._status === 200) { win?.close(); return done(r); }
       if (win && win.closed && Date.now() - t0 > 4000) {
         await new Promise(r => setTimeout(r, 1500));
         const last = await check();
-        if (last._status === 200) return last;
+        if (last._status === 200) return done(last);
         throw new Error("The sign-in window closed before finishing.");
       }
     }
     throw new Error("Sign-in timed out.");
   } catch (e) { win?.close(); throw e; }
+}
+/* Plex Home: the account that signed in has other profiles (family, kids). Pick one, with its PIN if it has one.
+   Resolves with the sign-in (or link) result; rejects if they back out. */
+function whoPick(prefix, {pick, state}) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("div"); el.className = "who"; el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true");
+    const close = () => el.remove();
+    for (const u of pick) if (!/^https:\/\/[^'"()\s\\]+$/.test(u.thumb || "")) u.thumb = null;  // only plain https pictures go in the style
+    const people = () => {
+      el.innerHTML = `<div class="card"><h2>Who's watching?</h2><p class="muted">This Plex account has a few profiles. Pick yours.</p>
+        <div class="ppl">${pick.map((u, i) => `<button class="p" data-i="${i}"><span class="av" ${u.thumb ? `style="background-image:url('${esc(u.thumb)}')"` : ""}>${u.thumb ? "" : esc((u.name[0] || "?").toUpperCase())}</span>
+          <span class="nm">${esc(u.name)}</span><span class="tg">${[u.admin && "Owner", u.kid && "Kids", u.pin && "🔒 PIN"].filter(Boolean).join(" · ") || "&nbsp;"}</span></button>`).join("")}</div>
+        <p class="err" id="whoErr"></p><button class="btn small gray" data-x>Cancel</button></div>`;
+      el.querySelector(".p")?.focus();
+    };
+    const go = async (u, pin, btn) => {
+      if (btn) btn.disabled = true;
+      try { const r = await api(prefix + "/pick", {body: {state, user: u.id, pin: pin || null, device: device()}, quiet: true}); close(); resolve(r); }
+      catch (e) {
+        if (/expired|Too many/.test(e.message)) { close(); reject(e); return; }
+        const err = el.querySelector("#whoErr"); if (err) err.textContent = e.message;
+        if (btn) btn.disabled = false;
+        el.querySelector("input")?.select();
+      }
+    };
+    const askPin = u => {
+      el.innerHTML = `<div class="card"><h2>${esc(u.name)}</h2><p class="muted">Enter this profile's Plex PIN.</p>
+        <form><input class="input" name="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" required>
+        <button class="btn" type="submit">Continue</button></form><p class="err" id="whoErr"></p><button class="btn small gray" data-back>Back</button></div>`;
+      const f = el.querySelector("form"), inp = f.pin; inp.focus();
+      inp.oninput = () => { if (inp.value.length === 4) f.requestSubmit(); };
+      f.onsubmit = ev => { ev.preventDefault(); go(u, inp.value, f.querySelector("button")); };
+    };
+    el.onclick = e => {
+      const p = e.target.closest("[data-i]");
+      if (p) { const u = pick[+p.dataset.i]; u.pin ? askPin(u) : go(u, null, p); }
+      else if (e.target.closest("[data-back]")) people();
+      else if (e.target.closest("[data-x]")) { close(); reject(new Error("Sign-in cancelled.")); }
+    };
+    people(); document.body.append(el);
+  });
 }
 const device = () => /iPhone|iPad/.test(navigator.userAgent) ? "iPhone (web)" : /Android/.test(navigator.userAgent) ? "Android (web)" : "Browser";
 

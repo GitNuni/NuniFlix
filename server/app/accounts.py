@@ -106,8 +106,10 @@ def plex_start():
     return {"state": state, "url": "https://app.plex.tv/auth#?" + urllib.parse.urlencode(params)}
 
 
-def plex_check(state):
-    """None while the user hasn't finished on plex.tv; their identity {id, name, source, owner} once they have."""
+def plex_check(state, pick=False):
+    """None while the user hasn't finished on plex.tv; their identity {id, name, source, owner} once they have.
+    pick=True (clients that can show a chooser): when the Plex account is in a Plex Home with other profiles, returns
+    {"pick": [profiles], "state": ...} instead, and plex_pick() finishes as the profile they choose."""
     with _pins_lock:
         entry = _pins.get(state)
     if not entry:
@@ -121,6 +123,89 @@ def plex_check(state):
         return None
     with _pins_lock:
         _pins.pop(state, None)
+    if pick:
+        profiles = _home_users(token)
+        if len(profiles) > 1:
+            key = secrets.token_urlsafe(24)
+            with _pins_lock:
+                now = time.time()
+                for k in [k for k, v in _picks.items() if now - v["t"] > 900]:
+                    del _picks[k]
+                if len(_picks) >= MAX_PENDING:
+                    raise LoginError("Too many sign-ins in progress. Try again in a few minutes.")
+                _picks[key] = {"t": now, "token": token, "users": profiles}
+            return {"pick": [{k: u[k] for k in ("id", "name", "thumb", "pin", "admin", "kid")} for u in profiles], "state": key}
+    return _plex_identity(token)
+
+
+# Plex Home: who's in it, after signing in, while they choose. {state: {"t", "token", "users"}}
+_picks = {}
+
+
+def _home_users(token):
+    """The profiles in this account's Plex Home (just one, or none, when it isn't in a Home)."""
+    import xml.etree.ElementTree as ET
+    try:
+        r = _http.get(PLEX_TV.rsplit("/api/v2", 1)[0] + "/api/home/users", headers={**_plex_headers(token), "Accept": "application/xml"})
+        if r.status_code != 200:
+            return []
+        out = []
+        for el in ET.fromstring(r.text).iter("User"):
+            if not el.get("id"):
+                continue
+            out.append({"id": el.get("id"), "name": el.get("title") or el.get("username") or "Plex user",
+                        "thumb": el.get("thumb") or None, "pin": el.get("protected") == "1",
+                        "admin": el.get("admin") == "1", "kid": el.get("restricted") == "1"})
+        return out
+    except (httpx.HTTPError, ET.ParseError):
+        return []
+
+
+def plex_pick(state, user_id, pin=None):
+    """Finish a Plex sign-in as one profile of their Plex Home. Raises LoginError("Wrong PIN.") for a wrong PIN."""
+    import xml.etree.ElementTree as ET
+    with _pins_lock:
+        entry = _picks.get(state)
+    if not entry or time.time() - entry["t"] > 900:
+        raise LoginError("That Plex sign-in expired. Start again.")
+    who = next((u for u in entry["users"] if u["id"] == str(user_id)), None)
+    if not who:
+        raise LoginError("That profile isn't in this Plex Home.")
+    token = entry["token"]
+    me = _http.get(f"{PLEX_TV}/user", headers=_plex_headers(token))
+    if me.status_code == 200 and str(me.json().get("id")) == who["id"]:  # the account that signed in: no switch needed
+        ident = _plex_identity(token)
+    else:
+        params = {"pin": pin} if pin else {}
+        try:
+            sw = _http.post(PLEX_TV.rsplit("/api/v2", 1)[0] + f"/api/home/users/{who['id']}/switch", params=params,
+                            headers={**_plex_headers(token), "Accept": "application/xml"})
+        except httpx.HTTPError:
+            raise LoginError("Plex didn't respond.")
+        if sw.status_code in (401, 403):
+            entry["tries"] = entry.get("tries", 0) + 1
+            if entry["tries"] >= 5:  # this sign-in is done: start again
+                with _pins_lock:
+                    _picks.pop(state, None)
+            raise LoginError("Wrong PIN." if who["pin"] else "Plex wouldn't switch to that profile.")
+        if sw.status_code not in (200, 201):
+            raise LoginError("Plex wouldn't switch to that profile.")
+        try:
+            el = ET.fromstring(sw.text)
+            sub = el.get("authenticationToken") or el.get("authToken")
+        except ET.ParseError:
+            sub = None
+        if not sub:
+            raise LoginError("Plex wouldn't switch to that profile.")
+        ident = _plex_identity(sub, admin=who["admin"])
+    with _pins_lock:
+        _picks.pop(state, None)
+    return ident
+
+
+def _plex_identity(token, admin=True):
+    """Who this Plex token belongs to, if they can reach this server. admin=False (a switched-to Home profile that
+    isn't the Home's admin) never counts as the owner, whatever Plex says about the server."""
     me = _http.get(f"{PLEX_TV}/user", headers=_plex_headers(token))
     if me.status_code != 200:
         raise LoginError("Plex didn't accept that sign-in.")
@@ -130,13 +215,14 @@ def plex_check(state):
     mine = next((x for x in (res.json() if res.status_code == 200 else []) if x.get("clientIdentifier") == server), None)
     if not mine:
         raise LoginError("That Plex account doesn't have access to this server.")
-    if mine.get("owned") and mine.get("accessToken"):  # lets NuniFlix find titles on the server for "Play on Plex"
+    owned = bool(mine.get("owned")) and admin
+    if owned and mine.get("accessToken"):  # lets NuniFlix find titles on the server for "Play on Plex"
         cfg = store.config()
         if cfg["plex"].get("token") != mine["accessToken"]:
             cfg["plex"]["token"] = mine["accessToken"]
             store.save_config(cfg)
     return {"id": f"plex:{me.get('id')}", "name": me.get("username") or me.get("title") or "plex user",
-            "source": "plex", "owner": bool(mine.get("owned")), "media_token": mine.get("accessToken")}
+            "source": "plex", "owner": owned, "media_token": mine.get("accessToken")}
 
 
 def _plex_server_id():

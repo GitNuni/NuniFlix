@@ -171,13 +171,44 @@ def login_plex_start():
 class PlexCheck(BaseModel):
     state: str = Field(max_length=100)
     device: Optional[str] = Field(None, max_length=80)
+    pick: bool = False  # the client can show a Plex Home profile chooser
+
+
+class PlexPick(BaseModel):
+    state: str = Field(max_length=100)
+    user: str = Field(max_length=40)
+    pin: Optional[str] = Field(None, max_length=12)
+    device: Optional[str] = Field(None, max_length=80)
+
+
+def _plex_pick(body, request):
+    ip = client_ip(request)
+    if accounts.too_many(ip):
+        raise HTTPException(429, "Too many tries. Wait 15 minutes.")
+    try:
+        return accounts.plex_pick(body.state, body.user, body.pin)
+    except accounts.LoginError as e:
+        if str(e) == "Wrong PIN.":
+            accounts.failed(ip)
+        raise
 
 
 @app.post("/api/auth/plex/check")
 def login_plex_check(body: PlexCheck, request: Request):
-    ident = accounts.plex_check(body.state)
+    ident = accounts.plex_check(body.state, body.pick)
     if not ident:
         return JSONResponse({"pending": True}, status_code=202)
+    if "pick" in ident:  # a Plex Home: they choose who they are first
+        return JSONResponse(ident, status_code=200)
+    return _plex_signed_in(ident, body, request)
+
+
+@app.post("/api/auth/plex/pick")
+def login_plex_pick(body: PlexPick, request: Request):
+    return _plex_signed_in(_plex_pick(body, request), body, request)
+
+
+def _plex_signed_in(ident, body, request):
     user = store.login_identity(ident)
     if user["blocked"]:
         raise HTTPException(403, "This account is blocked.")
@@ -354,8 +385,15 @@ def link_plex_start(user=Depends(current_user)):
 
 @app.post("/api/link/plex/check")
 def link_plex_check(body: PlexCheck, user=Depends(current_user)):
-    ident = accounts.plex_check(body.state)
+    ident = accounts.plex_check(body.state, body.pick)
+    if ident and "pick" in ident:
+        return ident
     return _linked(user, ident) if ident else JSONResponse({"pending": True}, status_code=202)
+
+
+@app.post("/api/link/plex/pick")
+def link_plex_pick(body: PlexPick, request: Request, user=Depends(current_user)):
+    return _linked(user, _plex_pick(body, request))
 
 
 @app.post("/api/link/discord/start")
