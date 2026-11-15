@@ -18,6 +18,15 @@ struct HostSays: Decodable, Hashable {
     var mood: String
     var line: String
     var lines: [String]?   // the guide: she cycles through these
+    var guest: Guest?      // her sister Lucy, now and then (server: banter.py)
+    var banter: [Bit]?     // then they do a little scene instead of one line
+
+    struct Guest: Decodable, Hashable { var name: String; var mood: String }
+    struct Bit: Decodable, Hashable { var who: String; var line: String }
+
+    /// How long a line (or the whole scene) takes to say.
+    static func time(_ line: String) -> Double { Double(line.count) * 0.045 + 1.4 }
+    var duration: Double { banter?.isEmpty == false ? banter!.reduce(0) { $0 + Self.time($1.line) } : Double(line.count) * 0.045 }
 
     /// Same hours as the server: friendly 6am-5pm, sly until 10pm (and 4-6am), evil in Horror Hours.
     static var moodNow: String {
@@ -164,7 +173,8 @@ struct LiveGuideView: View {
         }
         .task {  // Vesper has more than one thing to say
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
+                let scene = hostLine == 0 && lineup?.host?.banter?.isEmpty == false ? (lineup?.host?.duration ?? 0) + 3 : 0
+                try? await Task.sleep(for: .seconds(max(15, scene)))  // let Lucy's scene play out first
                 if tuned == nil { hostLine += 1 }
             }
         }
@@ -230,7 +240,10 @@ struct LiveGuideView: View {
                     .frame(maxWidth: 980, alignment: .leading)
             }
             Spacer(minLength: 0)
-            if let h = l.host {
+            if let h = l.host, h.banter?.isEmpty == false, hostLine == 0 {  // Lucy's in: their scene first
+                HostDuo(host: h, size: 104, bubbleWidth: 270, textSize: 19)
+                    .padding(.top, 150)
+            } else if let h = l.host {
                 let lines = h.lines?.isEmpty == false ? h.lines! : [h.line]
                 let said = lines[hostLine % lines.count]
                 HStack(alignment: .top, spacing: -10) {  // the bubble takes its own room, so it never covers the details
@@ -365,7 +378,9 @@ struct LiveBugView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(60)
             }
             HStack(alignment: .bottom, spacing: 18) {
-            if let h = bug.host {
+            if let h = bug.host, h.banter?.isEmpty == false {
+                HostDuo(host: h, size: 180, bubbleWidth: 560)
+            } else if let h = bug.host {
                 VStack(alignment: .leading, spacing: 8) {
                     SpeechBubble(text: h.line, width: 560)
                     HostSprite(mood: h.mood, talking: true, size: 200, talkFor: Double(h.line.count) * 0.045 + 0.6)
@@ -405,7 +420,9 @@ struct LiveBugView: View {
                     Text(bug.tagline ?? ch.tagline).font(.title3).foregroundStyle(.white.opacity(0.6))
                     if bug.takeover { TakeoverPill() }
                 }
-                if let h = bug.host {
+                if let h = bug.host, h.banter?.isEmpty == false {
+                    HostDuo(host: h, size: 230, bubbleWidth: 640).padding(.top, 10)
+                } else if let h = bug.host {
                     HStack(alignment: .bottom, spacing: 10) {
                         HostSprite(mood: h.mood, talking: true, size: 260, talkFor: Double(h.line.count) * 0.045 + 0.6)
                         SpeechBubble(text: h.line, width: 640).padding(.bottom, 120)
@@ -483,26 +500,76 @@ enum HostArt {
     }
 }
 
-/// White speech bubble; the words type themselves out.
+/// White speech bubble; the words type themselves out. With `who`, it's a scene: the speaker's name on top, a fixed
+/// width (so it doesn't jump between lines), and Lucy's lines in pink.
 struct SpeechBubble: View {
     var text: String
     var width: CGFloat
+    var who: String? = nil
+    var size: CGFloat = 30
     @State private var started = Date()
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.04)) { ctx in
             let n = min(text.count, Int(ctx.date.timeIntervalSince(started) / 0.045))
-            ZStack(alignment: .topLeading) {
-                Text(text).opacity(0)  // holds the final size so the bubble doesn't grow as it types
-                Text(String(text.prefix(n)))
+            let lucy = who == "lucy"
+            VStack(alignment: .leading, spacing: 4) {
+                if let who {
+                    Text(lucy ? "LUCY" : "VESPER").font(.system(size: size * 0.55, weight: .heavy)).kerning(1.5)
+                        .foregroundStyle(lucy ? Color(hex: 0xD6337A) : Color(hex: 0x7A3FB0))
+                }
+                ZStack(alignment: .topLeading) {
+                    Text(text).opacity(0)  // holds the final size so the bubble doesn't grow as it types
+                    Text(String(text.prefix(n)))
+                }
+                .font(.system(size: size, weight: .semibold)).foregroundStyle(.black)
             }
-            .font(.system(size: 30, weight: .semibold)).foregroundStyle(.black)
             .padding(.horizontal, 22).padding(.vertical, 16)
-            .frame(maxWidth: width, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(maxWidth: who == nil ? width : .infinity, alignment: .leading)
+            .frame(width: who == nil ? nil : width)
+            .background(lucy ? Color(hex: 0xFFE3EF) : .white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear { started = Date() }
         .id(text)
+    }
+}
+
+/// Vesper and her sister Lucy doing a scene: both on screen, one bubble between them that goes back and forth, and
+/// whoever's speaking moves her mouth. Lucy's nervous in Horror Hours (mood "lucy-scared").
+struct HostDuo: View {
+    var host: HostSays
+    var size: CGFloat
+    var bubbleWidth: CGFloat
+    var textSize: CGFloat = 30
+    @State private var started = Date()
+
+    var body: some View {
+        let bits = host.banter ?? []
+        TimelineView(.periodic(from: .now, by: 0.2)) { ctx in
+            let i = index(bits, ctx.date.timeIntervalSince(started))
+            if bits.indices.contains(i) {
+                let bit = bits[i], lucy = bit.who == "lucy"
+                HStack(alignment: .bottom, spacing: 12) {
+                    HostSprite(mood: host.mood, talking: !lucy, size: size, talkFor: Double(bit.line.count) * 0.045 + 0.3)
+                        .id("v\(lucy ? -1 : i)")
+                    SpeechBubble(text: bit.line, width: bubbleWidth, who: bit.who, size: textSize)
+                        .padding(.bottom, size * 0.3)
+                    HostSprite(mood: host.guest?.mood ?? "lucy", talking: lucy, size: size, talkFor: Double(bit.line.count) * 0.045 + 0.3)
+                        .id("l\(lucy ? i : -1)")
+                }
+            }
+        }
+        .onAppear { started = Date() }
+    }
+
+    /// Which line they're on, t seconds in (the last one stays up once the scene's over).
+    private func index(_ bits: [HostSays.Bit], _ t: Double) -> Int {
+        var acc = 0.0
+        for (i, b) in bits.enumerated() {
+            acc += HostSays.time(b.line)
+            if t < acc { return i }
+        }
+        return max(0, bits.count - 1)
     }
 }
 

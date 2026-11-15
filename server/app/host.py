@@ -6,10 +6,13 @@ Horror Hours (10pm-4am). Art: web/host/<mood>.png and <mood>-talk.png (5 frames,
 She has a lot to say (general lines, lines for each channel, the witching hour, weekends, takeover days) and remembers
 what she's said to each person lately, so she doesn't repeat herself.
 """
-import collections, random, threading
+import collections, os, random, threading
+
+import banter
 
 NAME = "Vesper"
 MOODS = ("day", "dusk", "evil")
+DUO = float(os.environ.get("NF_DUO", 0.33))  # how often her sister Lucy drops in (banter.py)
 
 
 def mood(hour):
@@ -261,7 +264,24 @@ def greeting(hour, takeover=None, who=None, weekday=None):
     out = _pick(lines, who, 6)
     if takeover in TAKEOVER:
         out = _pick(TAKEOVER[takeover][m], who, 1) + out[:4]
-    return {"name": NAME, "mood": m, "line": out[0], "lines": out}
+    res = {"name": NAME, "mood": m, "line": out[0], "lines": out}
+    if random.random() < DUO:
+        scenes = banter.SCENES[m] + (banter.TAKEOVER.get(takeover, []) * 3)
+        _duo(res, m, _scene(scenes, who))
+    return res
+
+
+def _scene(scenes, who, **fmt):
+    """A scene they haven't done for this person lately (remembered by its first line)."""
+    first = _pick([s[0] for s in scenes], who)[0]
+    return banter.parse(next(s for s in scenes if s[0] == first), **fmt)
+
+
+def _duo(res, m, lines):
+    """Lucy's in this one: `banter` is the scene (clients that know her play it; older ones just show `line`)."""
+    res["guest"] = {"name": banter.NAME, "mood": "lucy-scared" if m == "evil" else "lucy"}
+    res["banter"] = lines
+    return res
 
 
 def _fresh(options, who):
@@ -285,4 +305,11 @@ def line(program, channel_name, hour, offset, takeover=None, who=None, channel_k
         text = _pick(INTRO[m], who)[0].format(t=_title(program), ch=channel_name)
     else:
         text = _pick(JOIN[m], who)[0].format(t=_title(program), ch=channel_name, m=max(1, int(offset // 60)))
-    return {"name": NAME, "mood": m, "line": text}
+    res = {"name": NAME, "mood": m, "line": text}
+    if random.random() < DUO:
+        fmt = {"t": _title(program), "ch": channel_name, "m": max(1, int(offset // 60))}
+        scenes = (banter.INTRO if offset < 0 else banter.JOIN)[m]
+        if takeover in banter.TAKEOVER and random.random() < 0.4:
+            scenes = banter.TAKEOVER[takeover]
+        _duo(res, m, _scene(scenes, who, **fmt))
+    return res

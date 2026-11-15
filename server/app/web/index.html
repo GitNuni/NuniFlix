@@ -1014,6 +1014,16 @@ h2 .see{color:var(--accent);font-size:15px;font-weight:500}
 .live .lv-hosthd{display:flex;align-items:flex-end;gap:10px;max-width:760px;margin:6px auto 0;padding:0 12px}
 .live .lv-hosthd .spr{width:96px;height:96px;flex:none}
 .bubble{background:#fff;color:#111;border-radius:14px;padding:10px 13px;font-size:15px;font-weight:600;line-height:1.3;position:relative;margin-bottom:22px}
+.lv-hostrow.duo{display:flex;align-items:flex-end;gap:8px;width:100%;max-width:640px;box-sizing:border-box}
+.live .lv-hosthd>.lv-hostrow.duo{flex:1}
+.lv-hostrow.duo .bubble{flex:1;min-width:0;text-align:left}
+@media (max-width:600px){.lv-hostrow.duo .spr{width:80px!important;height:80px!important}}
+.lv-hostrow.duo .bubble::before{content:attr(data-who);display:block;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#7a3fb0;margin-bottom:2px}
+.lv-hostrow.duo .bubble.g{background:#ffe3ef}
+.lv-hostrow.duo .bubble.g::before{color:#d6337a}
+.lv-hostrow.duo .bubble.g::after{left:auto;right:-7px;border:8px solid transparent;border-left-color:#ffe3ef;border-right:0}
+.player .lv-hostrow.duo{width:min(640px,calc(100% - 28px));max-width:none}
+.player .lv-ident .lv-hostrow.duo{margin-left:auto;margin-right:auto}
 .bubble::after{content:"";position:absolute;left:-7px;bottom:12px;border:8px solid transparent;border-right-color:#fff;border-left:0}
 .live .lv-ch.pv{border-color:#5ce1ff;box-shadow:0 0 0 2px #5ce1ff inset}
 .spr{image-rendering:pixelated;background-repeat:no-repeat;background-size:auto 100%}
@@ -2075,26 +2085,45 @@ const lvTZ = () => -new Date().getTimezoneOffset();  // minutes east of UTC: the
 /* Vesper, the host (server: host.py). Same hours as the server: friendly by day, sly in the evening, evil in Horror Hours. */
 const hostMood = () => { const h = new Date().getHours(); return h >= 6 && h < 17 ? "day" : (h >= 17 && h < 22) || (h >= 4 && h < 6) ? "dusk" : "evil"; };
 function hostHTML(h, talk = true) {
+  if (h.banter?.length)  // her sister Lucy's in this one: both of them, one bubble that goes back and forth
+    return `<div class="lv-hostrow duo" data-banter="${esc(JSON.stringify(h.banter))}" data-mood="${esc(h.mood)}" data-gmood="${esc(h.guest?.mood || "lucy")}">
+      <div class="spr v"></div><div class="bubble"></div><div class="spr g"></div></div>`;
   return `<div class="lv-hostrow"><div class="spr" data-mood="${esc(h.mood)}" data-talk="${talk ? h.line.length * 45 + 600 : 0}"></div>
     <div class="bubble" data-type="${esc(h.line)}"></div></div>`;
 }
-function hostRun(root) {  // her mouth moves while the words type out
-  root.querySelectorAll(".spr[data-mood]").forEach(el => {
-    const m = el.dataset.mood, until = Date.now() + +el.dataset.talk, seq = [0, 1, 2, 3, 4, 3, 2, 1];
-    el.style.backgroundImage = `url(/host/${m}-talk.png)`; el.style.backgroundSize = "500% 100%";
-    let n = 0;
-    const tick = () => {
-      if (!el.isConnected) return;
-      if (Date.now() > until) { el.style.backgroundImage = `url(/host/${m}.png)`; el.style.backgroundSize = "100% 100%"; el.style.backgroundPosition = "0 0"; return; }
-      el.style.backgroundPosition = `${seq[n++ % 8] * 25}% 0`;
-      setTimeout(tick, 110);
-    };
-    tick();
-  });
-  root.querySelectorAll(".bubble[data-type]").forEach(el => {
-    const text = el.dataset.type; let i = 0;
-    el.style.minHeight = ""; el.textContent = text; el.style.minHeight = el.offsetHeight + "px"; el.textContent = "";  // keep its size while typing
-    const t = setInterval(() => { if (!el.isConnected || i >= text.length) return clearInterval(t); el.textContent = text.slice(0, ++i); }, 45);
+const hostDur = h => h?.banter?.length ? h.banter.reduce((n, x) => n + x.line.length * 45 + 1400, 0) : (h?.line.length || 0) * 45;
+function hostTalk(el, art, ms) {  // mouth moves for ms, then back to the still picture
+  const until = Date.now() + ms, seq = [0, 1, 2, 3, 4, 3, 2, 1], me = (el._talk = (el._talk || 0) + 1);
+  el.style.backgroundImage = `url(/host/${art}-talk.png)`; el.style.backgroundSize = "500% 100%";
+  let n = 0;
+  const tick = () => {
+    if (!el.isConnected || el._talk !== me) return;
+    if (Date.now() > until) { hostStill(el, art); return; }
+    el.style.backgroundPosition = `${seq[n++ % 8] * 25}% 0`;
+    setTimeout(tick, 110);
+  };
+  tick();
+}
+function hostStill(el, art) { el.style.backgroundImage = `url(/host/${art}.png)`; el.style.backgroundSize = "100% 100%"; el.style.backgroundPosition = "0 0"; }
+function hostType(el, text, minText = text) {  // the words type themselves out (sized to minText so it doesn't jump)
+  clearInterval(el._type); let i = 0;
+  el.style.minHeight = ""; el.textContent = minText; el.style.minHeight = el.offsetHeight + "px"; el.textContent = "";
+  el._type = setInterval(() => { if (!el.isConnected || i >= text.length) return clearInterval(el._type); el.textContent = text.slice(0, ++i); }, 45);
+}
+function hostRun(root) {
+  root.querySelectorAll(".spr[data-mood]").forEach(el => hostTalk(el, el.dataset.mood, +el.dataset.talk));
+  root.querySelectorAll(".bubble[data-type]").forEach(el => hostType(el, el.dataset.type));
+  root.querySelectorAll(".lv-hostrow.duo").forEach(async row => {
+    const lines = JSON.parse(row.dataset.banter), bub = row.querySelector(".bubble");
+    const spr = {vesper: row.querySelector(".spr.v"), lucy: row.querySelector(".spr.g")}, art = {vesper: row.dataset.mood, lucy: row.dataset.gmood};
+    hostStill(spr.vesper, art.vesper); hostStill(spr.lucy, art.lucy);
+    const longest = lines.reduce((a, x) => x.line.length > a.length ? x.line : a, "");
+    for (const {who, line} of lines) {
+      if (!row.isConnected) return;
+      bub.className = "bubble " + (who === "lucy" ? "g" : "v"); bub.dataset.who = who === "lucy" ? "Lucy" : "Vesper";
+      hostTalk(spr[who], art[who], line.length * 45 + 300); hostType(bub, line, longest);
+      await new Promise(r => setTimeout(r, line.length * 45 + 1400));
+    }
   });
 }
 /* retro touches: a burst of static when changing channel, and "Please stand by" when the picture stalls */
@@ -2157,11 +2186,14 @@ async function lvLoad() {
   $("#lvClock").textContent = lvHM(now);
   const h = LV.lineup.host;
   if (h && !$("#lvHost")) {
-    const say = line => { const box = $("#lvHost"); if (!box) return false; box.innerHTML = hostHTML({...h, line}).replace(/^<div class="lv-hostrow">|<\/div>$/g, ""); hostRun(box); return true; };
-    $("#lvList").insertAdjacentHTML("beforebegin", `<div class="lv-hosthd" id="lvHost"></div>`); say(h.line);
-    const lines = h.lines?.length ? h.lines : [h.line]; let n = 0;  // she has more than one thing to say
-    clearInterval(LV.hostTimer);
-    LV.hostTimer = setInterval(() => { if (!document.hidden && !$("#player") && !say(lines[++n % lines.length])) clearInterval(LV.hostTimer); }, 15000);
+    const say = line => { const box = $("#lvHost"); if (!box) return false; box.innerHTML = hostHTML({...h, line, banter: null}).replace(/^<div class="lv-hostrow">|<\/div>$/g, ""); hostRun(box); return true; };
+    $("#lvList").insertAdjacentHTML("beforebegin", `<div class="lv-hosthd" id="lvHost"></div>`);
+    if (h.banter?.length) { $("#lvHost").innerHTML = hostHTML(h); hostRun($("#lvHost")); } else say(h.line);
+    const lines = h.lines?.length ? h.lines : [h.line]; let n = h.banter?.length ? -1 : 0;  // she has more than one thing to say
+    clearInterval(LV.hostTimer); clearTimeout(LV.hostWait);
+    LV.hostWait = setTimeout(() => {  // after Lucy's scene (if she's in) has played out
+      LV.hostTimer = setInterval(() => { if (!document.hidden && !$("#player") && !say(lines[++n % lines.length])) clearInterval(LV.hostTimer); }, 15000);
+    }, Math.max(0, hostDur(h) - 15000 + 3000) * (h.banter?.length ? 1 : 0));
   }
   $("#lvList").innerHTML = LV.lineup.channels.map(c => {
     const p = lvNow(c), n = p && c.programs[c.programs.indexOf(p) + 1], on = p && p.start <= now;
@@ -2219,7 +2251,7 @@ async function lvTune(key) {
   stage.insertAdjacentHTML("beforeend", `${ch ? `<div class="lv-bug">${ch.number} ${esc(chName.toUpperCase())}</div>` : ""}
     <div class="lv-card"><div><em>NOW</em>${esc(lvLabel(p))}<small>until ${lvHM(p.end)}</small></div>
     ${nx ? `<div><em class="n">NEXT</em>${esc(lvLabel(nx))}<small>${lvHM(nx.start)}</small></div>` : ""}</div>`);
-  PL.lvTimer = setTimeout(() => $$("#player .lv-card, #player .lv-bug, #player .lv-hostrow").forEach(x => x.style.opacity = 0), 7000 + (t.host?.line.length || 0) * 45);
+  PL.lvTimer = setTimeout(() => $$("#player .lv-card, #player .lv-bug, #player .lv-hostrow").forEach(x => x.style.opacity = 0), 7000 + hostDur(t.host));
 }
 function lvFlip(step) {
   const chs = LV.lineup?.channels || [], i = chs.findIndex(c => c.key === PL.live);

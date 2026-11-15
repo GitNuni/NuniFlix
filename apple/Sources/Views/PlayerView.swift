@@ -246,7 +246,7 @@ final class Playback: ObservableObject {
         bug = shown
         await start(from: max(0, t.offset + (t.stream == nil ? Date().timeIntervalSince(asked) : 0)), stream: t.stream)
         done?(me == tuneTask); done = nil
-        let stay = 7 + Double(t.host?.line.count ?? 0) * 0.045
+        let stay = 7 + (t.host?.duration ?? 0)
         Task { try? await Task.sleep(for: .seconds(stay)); if self.bug == shown { self.bug = nil } }
     }
 
