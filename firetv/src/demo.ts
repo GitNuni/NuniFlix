@@ -1,6 +1,6 @@
 // Demo mode: the app without a NuniFlix server, for trying it out (and for Amazon's app reviewers, who must never
 // need the owner's own server). Answers the same API calls with made-up data. The titles are Blender's open movies
-// (Creative Commons); only Big Buck Bunny "is on the server", and it plays a public test stream of it.
+// (Creative Commons, © Blender Foundation, pictures from Wikimedia Commons); only Big Buck Bunny "is on the server", and it plays a public test stream of it.
 import type {Item, LiveChannel, LiveProgram} from './models';
 
 export const DEMO = 'demo';
@@ -10,17 +10,17 @@ const BBB_LENGTH = 596;
 type Q = Record<string, string | undefined>;
 
 const movies: Item[] = [
-  {type: 'movie', id: 10378, tmdb: 10378, title: 'Big Buck Bunny', year: 2008, status: 'available', rating: 6.5, runtime: 10, genres: ['Animation', 'Comedy'],
+  {type: 'movie', id: 10378, tmdb: 10378, poster: 'demo:500px-big-buck-bunny-poster-big.jpg', backdrop: 'demo:1280px-peach-poster-rodents.jpg', title: 'Big Buck Bunny', year: 2008, status: 'available', rating: 6.5, runtime: 10, genres: ['Animation', 'Comedy'],
     overview: 'A giant rabbit with a heart bigger than himself gets even with three bullying rodents.'},
-  {type: 'movie', id: 45745, tmdb: 45745, title: 'Sintel', year: 2010, status: 'none', rating: 7.1, runtime: 15, genres: ['Animation', 'Fantasy'],
+  {type: 'movie', id: 45745, tmdb: 45745, poster: 'demo:sintel-poster.jpg', backdrop: 'demo:sintel-poster.jpg', title: 'Sintel', year: 2010, status: 'none', rating: 7.1, runtime: 15, genres: ['Animation', 'Fantasy'],
     overview: 'A lonely young woman searches for the baby dragon she once rescued.'},
-  {type: 'movie', id: 133701, tmdb: 133701, title: 'Tears of Steel', year: 2012, status: 'none', rating: 6.0, runtime: 12, genres: ['Science Fiction'],
+  {type: 'movie', id: 133701, tmdb: 133701, poster: 'demo:500px-tos-poster.jpg', backdrop: 'demo:500px-tos-poster.jpg', title: 'Tears of Steel', year: 2012, status: 'none', rating: 6.0, runtime: 12, genres: ['Science Fiction'],
     overview: 'A group of warriors and scientists gather in Amsterdam to stage a crucial event from the past.'},
-  {type: 'movie', id: 9761, tmdb: 9761, title: 'Elephants Dream', year: 2006, status: 'none', rating: 5.8, runtime: 11, genres: ['Animation', 'Science Fiction'],
+  {type: 'movie', id: 9761, tmdb: 9761, poster: 'demo:500px-elephants-dream-s5-both.jpg', backdrop: 'demo:1280px-elephants-dream-s5-both.jpg', title: 'Elephants Dream', year: 2006, status: 'none', rating: 5.8, runtime: 11, genres: ['Animation', 'Science Fiction'],
     overview: 'Two strange characters explore a capricious and seemingly infinite machine.'},
-  {type: 'movie', id: 358332, tmdb: 358332, title: 'Cosmos Laundromat', year: 2015, status: 'none', rating: 6.6, runtime: 12, genres: ['Animation', 'Comedy'],
+  {type: 'movie', id: 358332, tmdb: 358332, poster: 'demo:500px-cosmoslaundromatposter.jpg', backdrop: 'demo:1280px-cosmoslaundromat-final-scene.jpg', title: 'Cosmos Laundromat', year: 2015, status: 'none', rating: 6.6, runtime: 12, genres: ['Animation', 'Comedy'],
     overview: 'On a desolate island, a suicidal sheep meets a mysterious salesman who offers him the gift of a lifetime.'},
-  {type: 'movie', id: 610150, tmdb: 610150, title: 'Spring', year: 2019, status: 'none', rating: 7.0, runtime: 8, genres: ['Animation', 'Fantasy'],
+  {type: 'movie', id: 610150, tmdb: 610150, poster: 'demo:500px-blender-open-movie-spring-2019.jpg', backdrop: 'demo:1280px-blender-open-movie-spring-2019.jpg', title: 'Spring', year: 2019, status: 'none', rating: 7.0, runtime: 8, genres: ['Animation', 'Fantasy'],
     overview: 'A shepherd girl and her dog face ancient spirits to keep the cycle of life going.'},
 ];
 
@@ -32,7 +32,7 @@ const provider = {id: '0', name: 'Open Movies'};
 function program(now: number): LiveProgram {
   const start = Math.floor(now / BBB_LENGTH) * BBB_LENGTH;
   const m = movies[0];
-  return {id: 'bbb', kind: 'movie', ext: m.id, tmdb: m.tmdb, title: m.title, overview: m.overview, start, end: start + BBB_LENGTH, slot_end: start + BBB_LENGTH};
+  return {id: 'bbb', kind: 'movie', ext: m.id, tmdb: m.tmdb, title: m.title, overview: m.overview, poster: m.poster, backdrop: m.backdrop, start, end: start + BBB_LENGTH, slot_end: start + BBB_LENGTH};
 }
 
 function channel(now: number): LiveChannel {

@@ -435,6 +435,7 @@ export function SettingsScreen() {
           <Text style={{color: '#FFFFFF', fontSize: 32}}>{store.me?.name ?? '…'}</Text>
           <Text style={{color: C.dim, fontSize: 24, marginTop: 10}}>Server</Text>
           <Text style={{color: '#FFFFFF', fontSize: 28, fontFamily: 'monospace'}}>{store.demo ? 'The demo (no server)' : store.server}</Text>
+          {store.demo ? <Text style={{color: C.dim, fontSize: 20}}>Demo films: Blender Foundation open movies (CC BY), blender.org</Text> : null}
         </View>
         <View style={{gap: 14}}>
           <Text style={{color: '#FFFFFF', fontSize: 34, fontWeight: '700'}}>Theme</Text>

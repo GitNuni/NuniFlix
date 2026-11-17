@@ -17,6 +17,7 @@ import {Item, itemKey} from '../models';
 import {M, ServiceTheme, tileSize, upper} from '../theme';
 import {useStore} from '../store';
 import {serverURL} from '../api';
+import {DEMO_ART} from '../demoArt';
 
 export const C = {
   text: '#FFFFFF',
@@ -123,7 +124,7 @@ export function Picture({uri: given, label, style, fit}: {uri?: string | null; l
         </Text>
       ) : null}
       {uri && !failed ? (
-        <Image source={{uri}} style={StyleSheet.absoluteFill} resizeMode={fit ? 'contain' : 'cover'} onError={() => setFailed(true)} />
+        <Image source={uri.startsWith('demo:') ? DEMO_ART[uri] : {uri}} style={[StyleSheet.absoluteFill, {width: '100%', height: '100%'}]} resizeMode={fit ? 'contain' : 'cover'} onError={() => setFailed(true)} />
       ) : null}
     </View>
   );
