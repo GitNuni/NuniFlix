@@ -2,7 +2,7 @@
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
 import AsyncStorage from '@amazon-devices/react-native-async-storage__async-storage';
 import {api, ApiError} from './api';
-import {AuthOptions, Item, Me, PlayItem, Provider} from './models';
+import {AuthOptions, Item, LiveChannel, Me, PlayItem, PlexProfile, Provider, Shelf} from './models';
 import {appTheme, NUNIFLIX, ServiceTheme} from './theme';
 
 export const DEVICE_NAME = 'Fire TV';
@@ -12,11 +12,14 @@ export type Route =
   | {name: 'yourflix'}
   | {name: 'service'; provider: Provider}
   | {name: 'section'; provider: Provider; title: string; type: string; cat?: string}
-  | {name: 'browse'; provider: Provider; title: string; query: Record<string, string>}
+  | {name: 'browse'; provider?: Provider; title: string; query: Record<string, string>} // no provider: your own library
+  | {name: 'library'; genre?: string}
+  | {name: 'shelf'; shelf: Shelf}
+  | {name: 'live'}
   | {name: 'search'; provider?: Provider}
   | {name: 'item'; item: Item; theme: ServiceTheme}
   | {name: 'settings'}
-  | {name: 'player'; title: string; queue: PlayItem[]; at: number};
+  | {name: 'player'; title: string; queue: PlayItem[]; at: number; live?: {key: string; channels: LiveChannel[]}};
 
 export interface Entry {
   key: number;
@@ -33,9 +36,15 @@ interface Store {
   theme: ServiceTheme;
   setServer(url: string): Promise<void>;
   clearServer(): Promise<void>;
-  didSignIn(text: string): Promise<void>;
+  /** askProfile: after a real sign-in a Plex Home gets "Who's watching?" (not after switching profile). */
+  didSignIn(text: string, askProfile?: boolean): Promise<void>;
+  profiles: PlexProfile[];
+  choosingProfile: boolean;
+  setChoosingProfile(on: boolean): void;
+  loadProfiles(): Promise<PlexProfile[]>;
   signOut(): Promise<void>;
   setTheme(id: string): Promise<void>;
+  setPref(key: string, value: string): Promise<void>;
   loadMe(): Promise<void>;
   // navigation
   stack: Entry[];
@@ -61,12 +70,17 @@ export function StoreProvider({children}: {children: React.ReactNode}) {
   const [themeId, setThemeId] = useState('nuniflix');
   const [stack, setStack] = useState<Entry[]>([{key: 0, route: {name: 'services'}}]);
   const nextKey = useRef(1);
+  const [profiles, setProfiles] = useState<PlexProfile[]>([]);
+  const [choosingProfile, setChoosingProfile] = useState(false);
+  const askProfile = useRef(false);
 
   const forget = useCallback(async () => {
     await AsyncStorage.removeItem('token');
     api.token = null;
     setSignedIn(false);
     setMe(null);
+    setProfiles([]);
+    setChoosingProfile(false);
     setStack([{key: 0, route: {name: 'services'}}]);
   }, []);
 
@@ -104,9 +118,24 @@ export function StoreProvider({children}: {children: React.ReactNode}) {
     } catch {}
   }, []);
 
+  const loadProfiles = useCallback(async () => {
+    try {
+      const p = await api.get<{profiles: PlexProfile[]}>('/profiles');
+      setProfiles(p.profiles ?? []);
+      return p.profiles ?? [];
+    } catch {
+      return [];
+    }
+  }, []);
+
   useEffect(() => {
-    if (signedIn) loadMe();
-  }, [signedIn, loadMe]);
+    if (!signedIn) return;
+    loadMe();
+    loadProfiles().then((p) => {
+      if (askProfile.current && p.length > 1) setChoosingProfile(true);
+      askProfile.current = false;
+    });
+  }, [signedIn, loadMe, loadProfiles]);
 
   const value = useMemo<Store>(
     () => ({
@@ -131,13 +160,25 @@ export function StoreProvider({children}: {children: React.ReactNode}) {
         await AsyncStorage.removeItem('server');
         setServerState(null);
       },
-      async didSignIn(text) {
+      async didSignIn(text, ask = true) {
         const s = JSON.parse(text) as {token?: string};
         if (!s.token) throw new ApiError(0, 'The server sent something unexpected. Is NuniFlix up to date?');
         api.token = s.token;
         await AsyncStorage.setItem('token', s.token);
-        setSignedIn(true);
+        if (signedIn) {
+          // switched profile: same TV, new person
+          setStack([{key: 0, route: {name: 'services'}}]);
+          await loadMe();
+          await loadProfiles();
+        } else {
+          askProfile.current = ask;
+          setSignedIn(true);
+        }
       },
+      profiles,
+      choosingProfile,
+      setChoosingProfile,
+      loadProfiles,
       async signOut() {
         try {
           await api.post('/auth/logout');
@@ -149,6 +190,12 @@ export function StoreProvider({children}: {children: React.ReactNode}) {
         await AsyncStorage.setItem('theme', id);
         try {
           await api.post('/me/prefs', {theme: id});
+        } catch {}
+      },
+      async setPref(key, value) {
+        setMe((m) => (m ? {...m, prefs: {...m.prefs, [key]: value}} : m));
+        try {
+          await api.post('/me/prefs', {[key]: value});
         } catch {}
       },
       loadMe,
@@ -166,7 +213,7 @@ export function StoreProvider({children}: {children: React.ReactNode}) {
         setStack((s) => s.slice(0, 1));
       },
     }),
-    [ready, server, signedIn, me, brand, themeId, stack, forget, loadMe],
+    [ready, server, signedIn, me, brand, themeId, stack, forget, loadMe, profiles, choosingProfile, loadProfiles],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

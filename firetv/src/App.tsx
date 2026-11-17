@@ -1,16 +1,10 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useRef} from 'react';
 import {BackHandler, StatusBar, useWindowDimensions, View} from 'react-native';
 import {Entry, StoreProvider, useStore} from './store';
 import {ServerScreen, SignInScreen} from './screens/SignIn';
-import {
-  BrowseGridScreen,
-  SearchScreen,
-  SectionScreen,
-  ServiceHomeScreen,
-  ServicesScreen,
-  SettingsScreen,
-  YourFlixScreen,
-} from './screens/Browse';
+import {BrowseGridScreen, SearchScreen, SectionScreen, ServiceHomeScreen, SettingsScreen} from './screens/Browse';
+import {LibraryScreen, ProfilePicker, ServicesScreen, ShelfScreen, YourFlixScreen} from './screens/Home';
+import {LiveScreen} from './screens/Live';
 import {DetailScreen} from './screens/Detail';
 import {PlayerScreen} from './screens/Player';
 import {Loading} from './components/ui';
@@ -34,20 +28,30 @@ function Screen({entry}: {entry: Entry}) {
       return <DetailScreen item={r.item} theme={r.theme} />;
     case 'settings':
       return <SettingsScreen />;
+    case 'library':
+      return <LibraryScreen genre={r.genre} />;
+    case 'shelf':
+      return <ShelfScreen shelf={r.shelf} />;
+    case 'live':
+      return <LiveScreen />;
     case 'player':
-      return <PlayerScreen title={r.title} queue={r.queue} at={r.at} />;
+      return <PlayerScreen title={r.title} queue={r.queue} at={r.at} live={r.live} />;
   }
 }
 
 /** Signed in: the screen stack. Only the top screen is shown; Back goes down one, and leaves the app from home. */
 function Main() {
   const store = useStore();
+  // Registered once, so it's always the last to hear Back: the player and open overlays (registered later) go first.
+  const ref = useRef(store);
+  ref.current = store;
   useEffect(() => {
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => store.pop());
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => ref.current.pop());
     return () => sub.remove();
-  }, [store]);
+  }, []);
   const top = store.stack[store.stack.length - 1];
-  return <Screen key={top.key} entry={top} />;
+  // "Who's watching?" replaces the screen while it's up, so the remote can't wander onto what's behind it
+  return store.choosingProfile ? <ProfilePicker /> : <Screen key={top.key} entry={top} />;
 }
 
 function Root() {

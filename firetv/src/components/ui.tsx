@@ -16,6 +16,7 @@ import {
 import {Item, itemKey} from '../models';
 import {M, ServiceTheme, tileSize, upper} from '../theme';
 import {useStore} from '../store';
+import {api} from '../api';
 
 export const C = {
   text: '#FFFFFF',
@@ -110,8 +111,10 @@ export function Button({
 }
 
 /** A remote picture that fills its box (posters, backdrops), or with `fit` shows all of it (title logos). */
-export function Picture({uri, label, style, fit}: {uri?: string | null; label?: string; style?: StyleProp<ViewStyle>; fit?: boolean}) {
+export function Picture({uri: given, label, style, fit}: {uri?: string | null; label?: string; style?: StyleProp<ViewStyle>; fit?: boolean}) {
   const [failed, setFailed] = useState(false);
+  // a path on the NuniFlix server itself (shelf art, profile pictures)
+  const uri = given && given.startsWith('/') && api.base ? api.base + given : given;
   return (
     <View style={[{backgroundColor: fit ? 'transparent' : C.faint, overflow: 'hidden', justifyContent: 'center', alignItems: 'center'}, style]}>
       {label && (!uri || failed) ? (
@@ -217,24 +220,26 @@ export function ItemRow({
   items,
   more,
   preferredFirst,
+  startPage = 1,
 }: {
   title: string;
   theme: ServiceTheme;
   items: Item[];
   more?: (page: number) => Promise<Item[]>;
   preferredFirst?: boolean;
+  startPage?: number; // pages already in `items`
 }) {
   const {push} = useStore();
   const [list, setList] = useState(items);
-  const page = useRef(1);
+  const page = useRef(startPage);
   const done = useRef(false);
   const loading = useRef(false);
 
   useEffect(() => {
     setList(items);
-    page.current = 1;
+    page.current = startPage;
     done.current = false;
-  }, [items]);
+  }, [items, startPage]);
 
   const loadMore = useCallback(async () => {
     if (!more || done.current || loading.current) return;

@@ -3,165 +3,10 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {FlatList, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
 import {api, errorText} from '../api';
-import {DiscoverPage, Extras, GenreRef, Item, itemKey, MyRequest, Provider, requestItem, Row, RowsPage} from '../models';
+import {DiscoverPage, Extras, GenreRef, Item, itemKey, Provider, Row, RowsPage} from '../models';
 import {useStore} from '../store';
 import {APP_THEMES, M, ServiceTheme, serviceTheme, tileSize, upper} from '../theme';
 import {Background, Button, C, ErrorView, Focusable, Heading, ItemCard, ItemRow, Loading, Picture, StatusBadge} from '../components/ui';
-
-const firstName = (n: string) => n.split(' ')[0] || n;
-
-// ---------- home: which service?
-
-export function ServicesScreen() {
-  const store = useStore();
-  const theme = store.theme;
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const p = await api.get<{enabled: boolean; providers: Provider[]}>('/browse/providers');
-      setProviders(p.providers);
-      setError(null);
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  return (
-    <Background theme={theme}>
-      <ScrollView contentContainerStyle={{padding: M.gutter, paddingTop: 50}}>
-        <View style={{flexDirection: 'row', alignItems: 'center', gap: 20}}>
-          <Text style={{color: theme.brand, fontSize: 72, fontWeight: '900', flex: 1}}>{upper(theme, store.brand)}</Text>
-          <Button title="Search" icon="⌕" onPress={() => store.push({name: 'search'})} theme={theme} />
-          <Button title="Settings" icon="⚙︎" onPress={() => store.push({name: 'settings'})} theme={theme} />
-        </View>
-        <Text style={{color: C.dim, fontSize: 30, marginTop: 8, marginBottom: M.spacing}}>
-          {store.me ? `Hi ${firstName(store.me.name)}. What do you feel like watching?` : 'What do you feel like watching?'}
-        </Text>
-        {error ? (
-          <ErrorView message={error} retry={load} theme={theme} />
-        ) : loaded && providers.length === 0 ? (
-          <ErrorView message="Browsing by service needs a TMDB key. The owner can add one in NuniFlix → Settings." theme={theme} />
-        ) : !loaded ? (
-          <Loading />
-        ) : null}
-        <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: M.spacing - 8}}>
-          <Focusable onPress={() => store.push({name: 'yourflix'})} corner={14} preferred>
-            <YourFlixTile theme={theme} />
-          </Focusable>
-          {providers.map((p) => (
-            <Focusable key={p.id} onPress={() => store.push({name: 'service', provider: p})} corner={14}>
-              <ServiceTile provider={p} />
-            </Focusable>
-          ))}
-        </View>
-      </ScrollView>
-    </Background>
-  );
-}
-
-function ServiceTile({provider}: {provider: Provider}) {
-  const t = serviceTheme(provider.name);
-  return (
-    <View style={[styles.tile, {backgroundColor: t.background[0]}]}>
-      <View style={[StyleSheet.absoluteFill, {backgroundColor: t.accent, opacity: 0.35, left: '45%'}]} />
-      <Picture uri={provider.logo} style={{width: M.serviceTile.height * 0.55, height: M.serviceTile.height * 0.55, borderRadius: 12}} />
-      <Text style={{color: '#FFFFFF', fontSize: 28, fontWeight: '700', flex: 1}} numberOfLines={2}>
-        {provider.name}
-      </Text>
-    </View>
-  );
-}
-
-function YourFlixTile({theme}: {theme: ServiceTheme}) {
-  return (
-    <View style={[styles.tile, {backgroundColor: theme.accent}]}>
-      <View style={[StyleSheet.absoluteFill, {backgroundColor: theme.background[0], opacity: 0.6, left: '55%'}]} />
-      <View>
-        <Text style={{color: '#FFFFFF', fontSize: 34, fontWeight: '900'}}>{upper(theme, 'YourFlix')}</Text>
-        <Text style={{color: 'rgba(255,255,255,0.85)', fontSize: 20}}>What you asked for</Text>
-      </View>
-    </View>
-  );
-}
-
-// ---------- YourFlix: everything you've requested
-
-export function YourFlixScreen() {
-  const store = useStore();
-  const theme = {...store.theme, tile: 'poster' as const};
-  const [requests, setRequests] = useState<MyRequest[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const r = await api.get<{requests: MyRequest[]}>('/requests', {scope: 'mine'});
-      setRequests(r.requests);
-      setError(null);
-    } catch (e) {
-      setError(errorText(e));
-    }
-    setLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const pick = (f: (r: MyRequest) => boolean): Item[] => {
-    const seen = new Set<string>();
-    return requests.filter(f).flatMap((r) => {
-      const it: Item = {...requestItem(r), status: r.status === 'pending' ? 'pending' : r.media_status ?? 'processing', progress: r.progress};
-      const k = itemKey(it);
-      if (seen.has(k)) return []; // a show asked for twice (two seasons) shows once
-      seen.add(k);
-      return [it];
-    });
-  };
-  const ready = (r: MyRequest) => ['available', 'partial'].includes(r.media_status ?? '');
-  const rows: [string, Item[]][] = (
-    [
-      ['Ready to watch', pick((r) => r.status === 'approved' && ready(r))],
-      ['On the way', pick((r) => r.status === 'approved' && !ready(r))],
-      ['Waiting for approval', pick((r) => r.status === 'pending')],
-      ["Didn't go through", pick((r) => r.status === 'denied' || r.status === 'failed')],
-    ] as [string, Item[]][]
-  ).filter(([, l]) => l.length > 0);
-
-  return (
-    <Background theme={theme}>
-      <ScrollView contentContainerStyle={{paddingVertical: 50}}>
-        <View style={{paddingHorizontal: M.gutter, marginBottom: M.spacing}}>
-          <Text style={{color: theme.brand, fontSize: 68, fontWeight: '900'}}>{upper(theme, 'YourFlix')}</Text>
-          <Text style={{color: C.dim, fontSize: 28}}>
-            {store.me ? `Everything ${firstName(store.me.name)} asked for` : 'Everything you asked for'}
-          </Text>
-        </View>
-        {error ? (
-          <ErrorView message={error} retry={load} theme={theme} />
-        ) : !loaded ? (
-          <Loading />
-        ) : rows.length === 0 ? (
-          <Text style={{color: C.dim, fontSize: 28, paddingHorizontal: M.gutter}}>
-            Nothing requested yet. Find something on a service and choose Request.
-          </Text>
-        ) : (
-          rows.map(([title, list], i) => (
-            <ItemRow key={title} title={`${title}  ·  ${list.length}`} theme={theme} items={list} preferredFirst={i === 0} />
-          ))
-        )}
-      </ScrollView>
-    </Background>
-  );
-}
 
 // ---------- a service's home
 
@@ -432,12 +277,15 @@ function ItemGridList({items, theme, header, onEnd, footer}: {
   );
 }
 
-export function BrowseGridScreen({provider, title, query}: {provider: Provider; title: string; query: Record<string, string>}) {
-  const theme = serviceTheme(provider.name);
+/** Everything on a service (or, with no provider, on your own Plex/Jellyfin), a page at a time. */
+export function BrowseGridScreen({provider, title, query}: {provider?: Provider; title: string; query: Record<string, string>}) {
+  const store = useStore();
+  const theme: ServiceTheme = provider ? serviceTheme(provider.name) : {...store.theme, tile: 'poster'};
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const st = useRef({page: 0, total: 1, loading: false});
+  const st = useRef({page: 0, total: 1, loading: false, seen: new Set<string>()});
+  const endpoint = provider ? `/browse/provider/${provider.id}` : '/library';
 
   const next = useCallback(async () => {
     const s = st.current;
@@ -448,15 +296,15 @@ export function BrowseGridScreen({provider, title, query}: {provider: Provider; 
       let added = 0;
       // a page that's all repeats: go straight on to the next so the grid doesn't stall
       while (added === 0 && s.page < s.total) {
-        const d = await api.get<DiscoverPage>(`/browse/provider/${provider.id}`, {...query, page: String(s.page + 1), quick: 'true'});
+        const q: Record<string, string> = {...query, page: String(s.page + 1)};
+        if (provider) q.quick = 'true';
+        const d = await api.get<DiscoverPage>(endpoint, q);
         s.page = d.page;
         s.total = d.total_pages;
-        setItems((cur) => {
-          const seen = new Set(cur.map(itemKey));
-          const fresh = d.results.filter((it) => !seen.has(itemKey(it)));
-          added = fresh.length;
-          return fresh.length ? [...cur, ...fresh] : cur;
-        });
+        const fresh = d.results.filter((it) => !s.seen.has(itemKey(it)));
+        fresh.forEach((it) => s.seen.add(itemKey(it)));
+        added = fresh.length;
+        if (fresh.length) setItems((cur) => [...cur, ...fresh]);
         if (d.results.length === 0) break;
       }
       setError(null);
@@ -465,7 +313,7 @@ export function BrowseGridScreen({provider, title, query}: {provider: Provider; 
     }
     s.loading = false;
     setLoading(false);
-  }, [provider.id, query]);
+  }, [endpoint, provider, query]);
 
   useEffect(() => {
     next();
@@ -479,7 +327,7 @@ export function BrowseGridScreen({provider, title, query}: {provider: Provider; 
         onEnd={next}
         header={
           <Text style={{color: '#FFFFFF', fontSize: 48, fontWeight: '800', marginVertical: 40, marginHorizontal: 8}}>
-            {upper(theme, title)} on {provider.name}
+            {upper(theme, title)} on {provider?.name ?? 'your library'}
           </Text>
         }
         footer={
@@ -606,7 +454,24 @@ export function SettingsScreen() {
             ))}
           </View>
         </View>
+        <View style={{gap: 14}}>
+          <Text style={{color: '#FFFFFF', fontSize: 34, fontWeight: '700'}}>Live TV hosts</Text>
+          <Text style={{color: C.dim, fontSize: 22}}>
+            Vesper introduces the shows on Live TV, and her sister Lucy drops in now and then. Same setting as on the website.
+          </Text>
+          <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 16}}>
+            {[
+              ['both', 'Vesper and Lucy'],
+              ['vesper', 'Just Vesper'],
+              ['off', 'No hosts'],
+            ].map(([k, label]) => {
+              const on = (store.me?.prefs?.hosts ?? 'both') === k;
+              return <Button key={k} title={(on ? '✓ ' : '') + label} onPress={() => store.setPref('hosts', k)} theme={theme} primary={on} />;
+            })}
+          </View>
+        </View>
         <View style={{flexDirection: 'row', gap: 20, marginTop: 20}}>
+          {store.profiles.length > 1 ? <Button title="Switch profile" onPress={() => store.setChoosingProfile(true)} theme={theme} /> : null}
           <Button title="Sign out" onPress={() => store.signOut()} theme={theme} />
           <Button title="Use a different server" onPress={() => store.clearServer()} theme={theme} />
         </View>
@@ -615,15 +480,4 @@ export function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  tile: {
-    width: M.serviceTile.width,
-    height: M.serviceTile.height,
-    borderRadius: 14,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    paddingHorizontal: 20,
-  },
-});
+
