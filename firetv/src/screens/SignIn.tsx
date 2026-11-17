@@ -79,7 +79,13 @@ export function ServerScreen() {
         </Text>
         <Field value={address} onChange={setAddress} placeholder="http://192.168.0.49:8095" onSubmit={connect} preferred />
         {error ? <Text style={{color: C.red, fontSize: 26, textAlign: 'center', maxWidth: 1200}}>{error}</Text> : null}
-        <Button title={checking ? 'Checking…' : 'Connect'} onPress={connect} theme={theme} primary disabled={checking || !address.trim()} />
+        <View style={{flexDirection: 'row', gap: 24}}>
+          <Button title={checking ? 'Checking…' : 'Connect'} onPress={connect} theme={theme} primary disabled={checking || !address.trim()} />
+          <Button title="Try the demo" onPress={() => store.startDemo()} theme={theme} />
+        </View>
+        <Text style={{color: C.dim, fontSize: 22, textAlign: 'center', maxWidth: 1200}}>
+          NuniFlix works with your own NuniFlix server (for Plex or Jellyfin). No server? The demo shows how it works with a few open movies.
+        </Text>
       </View>
     </Background>
   );

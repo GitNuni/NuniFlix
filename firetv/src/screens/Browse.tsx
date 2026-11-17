@@ -434,7 +434,7 @@ export function SettingsScreen() {
           <Text style={{color: C.dim, fontSize: 24}}>Signed in as</Text>
           <Text style={{color: '#FFFFFF', fontSize: 32}}>{store.me?.name ?? '…'}</Text>
           <Text style={{color: C.dim, fontSize: 24, marginTop: 10}}>Server</Text>
-          <Text style={{color: '#FFFFFF', fontSize: 28, fontFamily: 'monospace'}}>{store.server}</Text>
+          <Text style={{color: '#FFFFFF', fontSize: 28, fontFamily: 'monospace'}}>{store.demo ? 'The demo (no server)' : store.server}</Text>
         </View>
         <View style={{gap: 14}}>
           <Text style={{color: '#FFFFFF', fontSize: 34, fontWeight: '700'}}>Theme</Text>
@@ -472,8 +472,14 @@ export function SettingsScreen() {
         </View>
         <View style={{flexDirection: 'row', gap: 20, marginTop: 20}}>
           {store.profiles.length > 1 ? <Button title="Switch profile" onPress={() => store.setChoosingProfile(true)} theme={theme} /> : null}
-          <Button title="Sign out" onPress={() => store.signOut()} theme={theme} />
-          <Button title="Use a different server" onPress={() => store.clearServer()} theme={theme} />
+          {store.demo ? (
+            <Button title="Leave the demo" onPress={() => store.clearServer()} theme={theme} primary />
+          ) : (
+            <>
+              <Button title="Sign out" onPress={() => store.signOut()} theme={theme} />
+              <Button title="Use a different server" onPress={() => store.clearServer()} theme={theme} />
+            </>
+          )}
         </View>
       </ScrollView>
     </Background>

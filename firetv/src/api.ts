@@ -1,4 +1,5 @@
 // Talks to the NuniFlix server with `Authorization: Bearer <token>`, like apple/Sources/Core/API.swift.
+import {DEMO, demo} from './demo';
 
 export class ApiError extends Error {
   status: number;
@@ -61,6 +62,12 @@ class Api {
 
   /** Raw call: [body text, status]. Throws ApiError for status >= 400, with the server's own message. */
   async send(method: string, path: string, query: Query = {}, body?: object, signal?: AbortSignal): Promise<[string, number]> {
+    if (this.base === DEMO) {
+      const [status, obj] = demo(method, path, query, body as Record<string, unknown>);
+      const text = JSON.stringify(obj);
+      if (status >= 400) throw new ApiError(status, Api.detail(text) ?? `Something went wrong (${status}).`);
+      return [text, status];
+    }
     const headers: Record<string, string> = {Accept: 'application/json'};
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
     if (body) headers['Content-Type'] = 'application/json';
@@ -113,6 +120,7 @@ class Api {
 
   /** Is there a NuniFlix at this address? */
   async check(candidate: string): Promise<boolean> {
+    if (candidate === DEMO) return true;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
     try {
@@ -129,6 +137,11 @@ class Api {
 }
 
 export const api = new Api();
+
+/** A stream or picture address from the server: absolute already, or a path on the server. */
+export function serverURL(u: string): string {
+  return /^https?:\/\//i.test(u) || !api.base || api.base === DEMO ? u : api.base + u;
+}
 
 export function errorText(e: unknown): string | null {
   if (e instanceof ApiError) return e.status === -1 ? null : e.message;

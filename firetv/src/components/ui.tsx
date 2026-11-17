@@ -16,7 +16,7 @@ import {
 import {Item, itemKey} from '../models';
 import {M, ServiceTheme, tileSize, upper} from '../theme';
 import {useStore} from '../store';
-import {api} from '../api';
+import {serverURL} from '../api';
 
 export const C = {
   text: '#FFFFFF',
@@ -114,7 +114,7 @@ export function Button({
 export function Picture({uri: given, label, style, fit}: {uri?: string | null; label?: string; style?: StyleProp<ViewStyle>; fit?: boolean}) {
   const [failed, setFailed] = useState(false);
   // a path on the NuniFlix server itself (shelf art, profile pictures)
-  const uri = given && given.startsWith('/') && api.base ? api.base + given : given;
+  const uri = given ? serverURL(given) : given;
   return (
     <View style={[{backgroundColor: fit ? 'transparent' : C.faint, overflow: 'hidden', justifyContent: 'center', alignItems: 'center'}, style]}>
       {label && (!uri || failed) ? (

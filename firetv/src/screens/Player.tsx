@@ -9,7 +9,7 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {ActivityIndicator, BackHandler, StyleSheet, Text, View} from 'react-native';
 import {useTVEventHandler} from '@amazon-devices/react-native-kepler';
 import {KeplerVideoSurfaceView, VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
-import {api, errorText} from '../api';
+import {api, errorText, serverURL} from '../api';
 import {clock, episodeCode, HostSays, hm, LiveChannel, LiveProgram, LiveTune, liveTZ, PlayItem, programLabel, StreamStart} from '../models';
 import {useStore} from '../store';
 import {Hls} from '../player/hls';
@@ -97,7 +97,7 @@ export function PlayerScreen({title, queue, at, live}: {
     const vp = player.current;
     if (!vp) return;
     session.current = s.session;
-    const hls = new Hls(vp, api.base + s.url);
+    const hls = new Hls(vp, serverURL(s.url));
     hls.onLog = (m) => log('hls', m);
     hls.onError = (m) => isCurrent() && setError(m);
     engine.current = hls;

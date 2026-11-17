@@ -2,6 +2,7 @@
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
 import AsyncStorage from '@amazon-devices/react-native-async-storage__async-storage';
 import {api, ApiError} from './api';
+import {DEMO} from './demo';
 import {AuthOptions, Item, LiveChannel, Me, PlayItem, PlexProfile, Provider, Shelf} from './models';
 import {appTheme, NUNIFLIX, ServiceTheme} from './theme';
 
@@ -35,6 +36,9 @@ interface Store {
   themeId: string;
   theme: ServiceTheme;
   setServer(url: string): Promise<void>;
+  /** Try the app with made-up data, no server needed (demo.ts). */
+  startDemo(): Promise<void>;
+  demo: boolean;
   clearServer(): Promise<void>;
   /** askProfile: after a real sign-in a Plex Home gets "Who's watching?" (not after switching profile). */
   didSignIn(text: string, askProfile?: boolean): Promise<void>;
@@ -150,6 +154,17 @@ export function StoreProvider({children}: {children: React.ReactNode}) {
         api.base = url;
         await AsyncStorage.setItem('server', url);
         setServerState(url);
+      },
+      demo: server === DEMO,
+      async startDemo() {
+        api.base = DEMO;
+        api.token = 'demo';
+        await AsyncStorage.multiSet([
+          ['server', DEMO],
+          ['token', 'demo'],
+        ]);
+        setServerState(DEMO);
+        setSignedIn(true);
       },
       async clearServer() {
         try {
