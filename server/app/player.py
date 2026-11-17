@@ -99,7 +99,7 @@ def _client_id(user, platform):
 
 
 def _device(platform):
-    return {"tvos": "Apple TV", "ios": "iPhone", "web": "Browser"}.get(platform, "iPhone")
+    return {"tvos": "Apple TV", "ios": "iPhone", "web": "Browser", "firetv": "Fire TV"}.get(platform, "iPhone")
 
 
 def _plex_base():
@@ -204,6 +204,8 @@ JF_PROFILE = {
     "SubtitleProfiles": [{"Format": "vtt", "Method": "Hls"}],
     "ContainerProfiles": [], "CodecProfiles": [],
 }
+# Players that feed HLS to Media Source Extensions themselves: browsers without built-in HLS (hls.js) and the Fire TV app.
+SIMPLE = ("web", "firetv")
 # Browsers without built-in HLS (Chrome, Firefox) play through hls.js: H.264 + stereo AAC in MPEG-TS is what they all handle.
 JF_PROFILE_WEB = {**JF_PROFILE, "TranscodingProfiles": [
     {"Container": "ts", "Type": "Video", "VideoCodec": "h264", "AudioCodec": "aac", "Context": "Streaming", "Protocol": "hls",
@@ -243,8 +245,9 @@ def _plex_start(s, offset):
         "path": f"/library/metadata/{s['item']}", "mediaIndex": 0, "partIndex": 0, "protocol": "hls", "fastSeek": 1,
         "directPlay": 0, "directStream": 1, "directStreamAudio": 1, "videoQuality": 100,
         "videoResolution": "3840x2160" if s["platform"] == "tvos" else "1920x1080", "maxVideoBitrate": 40000,
-        # browsers: convert everything to H.264 + AAC (Plex would otherwise pass through HEVC / surround audio they can't play)
-        **({"directStream": 0, "directStreamAudio": 0, "audioChannelCount": 2} if s["platform"] == "web" else {}),
+        # browsers and Fire TV (both feed MPEG-TS to Media Source Extensions): convert everything to H.264 + stereo AAC
+        # (Plex would otherwise pass through HEVC / surround audio they can't play)
+        **({"directStream": 0, "directStreamAudio": 0, "audioChannelCount": 2} if s["platform"] in SIMPLE else {}),
         "subtitles": "auto", "subtitleSize": 100, "audioBoost": 100, "location": "lan", "offset": int(offset or 0),
         "session": s["sid"], "X-Plex-Session-Identifier": s["sid"], "X-Plex-Client-Identifier": s["client"],
         "X-Plex-Product": store.app_name(), "X-Plex-Platform": "iOS", "X-Plex-Device": _device(s["platform"]),
@@ -260,7 +263,7 @@ def _plex_start(s, offset):
 
 
 def _jf_start(s, uid, offset):
-    profile = JF_PROFILE_WEB if s["platform"] == "web" else JF_PROFILE
+    profile = JF_PROFILE_WEB if s["platform"] in SIMPLE else JF_PROFILE
     body = {"UserId": uid, "StartTimeTicks": int((offset or 0) * 1e7), "DeviceProfile": profile,
             "EnableDirectPlay": False, "EnableDirectStream": False, "AutoOpenLiveStream": True}
     if s["subtitle"]:  # burn the chosen track into the picture

@@ -1,0 +1,50 @@
+schema-version = 1
+
+[package]
+title = "NuniFlix"
+version = "0.1.0"
+# Floor so local builds pass vpt validate; pass an increasing --build-number for every Appstore upload.
+build-number = 1
+id = "com.nunitech.nuniflix"
+
+[os.version]
+min = "2.0"
+target = "2.0"
+
+[needs]
+[wants]
+[[wants.module]]
+id = "/com.amazon.kepler.net.net_manager@INetManager"
+
+# The on-screen keyboard (server address, search, Jellyfin sign-in)
+[[wants.service]]
+id = "com.amazon.inputmethod.service"
+
+# Video playback (W3C media: the in-app player)
+[[wants.service]]
+id = "com.amazon.mediametrics.service"
+[[wants.service]]
+id = "com.amazon.media.server"
+[[wants.service]]
+id = "com.amazon.gipc.uuid.*"
+[[wants.service]]
+id = "com.amazon.media.playersession.service"
+[[wants.service]]
+id = "com.amazon.mediabuffer.service"
+[[wants.service]]
+id = "com.amazon.mediatransform.service"
+[[wants.service]]
+id = "com.amazon.audio.stream"
+[[wants.service]]
+id = "com.amazon.audio.control"
+
+[offers]
+[[offers.service]]
+id = "com.amazon.gipc.uuid.*"
+
+[components]
+[[components.interactive]]
+id = "com.nunitech.nuniflix.main"
+runtime-module = "/com.amazon.kepler.runtime.react_native_kepler_4@IReactNativeKepler_0"
+launch-type = "singleton"
+categories = ["com.amazon.category.main"]
