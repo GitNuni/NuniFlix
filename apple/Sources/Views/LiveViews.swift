@@ -95,9 +95,9 @@ struct LiveBug: Equatable {
     var takeover: Bool = false
 }
 
-private func hm(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
+func hm(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
 
-private enum Guide {
+enum Guide {
     static let navy = Color(hex: 0x0A1034)
     static let cell = Color(hex: 0x16205A)
     static let cellNow = Color(hex: 0x1F2D78)
@@ -192,7 +192,11 @@ struct LiveGuideView: View {
             }
         }
         .fullScreenCover(item: $tuned) { t in
+            #if os(tvOS)
+            LiveScreen(channel: t.key, channels: lineup?.channels ?? [])
+            #else
             PlayerScreen(channel: t.key, channels: lineup?.channels ?? [])
+            #endif
         }
         .onChange(of: focus) { _, f in
             lastFocus = Date(); previewing = false
@@ -366,6 +370,7 @@ private struct GuideCellStyle: ButtonStyle {
 
 struct LiveBugView: View {
     var bug: LiveBug
+    var bottom: CGFloat = 230  // clear of Apple's progress bar (the Live TV screen has none)
     var body: some View {
         if let at = bug.startsAt { ident(at) } else { card }
     }
@@ -408,7 +413,7 @@ struct LiveBugView: View {
                         in: RoundedRectangle(cornerRadius: 14))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-            .padding(.horizontal, 60).padding(.bottom, 230)  // clear of Apple's progress bar
+            .padding(.horizontal, 60).padding(.bottom, bottom)
         }
     }
 

@@ -244,6 +244,7 @@ final class Playback: ObservableObject {
         let shown = LiveBug(channel: ch, now: p, next: t.next, startsAt: nil, host: t.host, name: t.channel?.name,
                             tagline: t.channel?.tagline, takeover: t.channel?.takeover != nil)
         bug = shown
+        lastBug = shown
         await start(from: max(0, t.offset + (t.stream == nil ? Date().timeIntervalSince(asked) : 0)), stream: t.stream)
         done?(me == tuneTask); done = nil
         let stay = 7 + (t.host?.duration ?? 0)
@@ -267,22 +268,83 @@ final class Playback: ObservableObject {
         }
     }
 
-    /// Channel up/down. The Siri Remote's channel flipping (AVPlayerViewController's delegate) and the clickpad both
-    /// land here; a press that arrives both ways only flips once.
-    private var lastFlip = Date.distantPast
-    private var lastFlipSource = ""
-    @discardableResult
-    func flip(_ step: Int, from source: String = "") async -> Bool {
-        if source != lastFlipSource, Date().timeIntervalSince(lastFlip) < 0.5 { return false }
-        lastFlip = Date(); lastFlipSource = source
-        guard let ch = peek(step) else { return false }
-        return await withCheckedContinuation { c in Task { await tune(ch.key) { c.resume(returning: $0) } } }
+    // MARK: the remote on Live TV (LivePlayer.swift)
+
+    enum LiveKey { case up, down, left, right, select, menu, playPause }
+
+    /// The channel card while flipping: up straight away, gone once the new channel is on screen.
+    @Published var flipTo: LiveChannel?
+    /// The channel strip along the bottom (left/right): which channel is highlighted, nil when it's closed.
+    @Published var stripAt: Int?
+    @Published var paused = false
+    private var flipTarget: String?   // where a run of quick presses has got to
+    private var flipTask: Task<Void, Never>?
+    private var stripTask: Task<Void, Never>?
+    private var lastBug: LiveBug?
+
+    /// One press, click or swipe. Returns false when Back should close the player.
+    func key(_ k: LiveKey) -> Bool {
+        let n = channels.count
+        switch k {
+        case .up, .down:
+            stripAt = nil
+            nudge(k == .up ? 1 : -1)
+        case .left, .right:
+            guard n > 0 else { break }
+            if let s = stripAt { stripAt = (s + (k == .right ? 1 : -1) + n) % n } else { stripAt = index(flipTarget ?? channelKey) ?? 0 }
+            holdStrip()
+        case .select:
+            if let s = stripAt, s < n {
+                stripAt = nil
+                if channels[s].key != (flipTarget ?? channelKey) { jump(to: channels[s], after: 0) }
+            } else {
+                info()
+            }
+        case .menu:
+            if stripAt != nil { stripAt = nil } else if bug != nil, bug?.startsAt == nil { bug = nil } else { return false }
+        case .playPause:
+            guard player.currentItem != nil else { break }
+            if player.rate == 0 { player.play(); paused = false } else { player.pause(); paused = true }
+        }
+        return true
     }
 
-    /// The channel `step` away from the one tuned to.
-    func peek(_ step: Int) -> LiveChannel? {
-        guard let channelKey, let i = channels.firstIndex(where: { $0.key == channelKey }), !channels.isEmpty else { return nil }
-        return channels[(i + step + channels.count) % channels.count]
+    private func index(_ key: String?) -> Int? { channels.firstIndex { $0.key == key } }
+
+    /// Channel up/down. The card shows at once; quick presses add up and only the channel they land on is loaded.
+    private func nudge(_ step: Int) {
+        guard let i = index(flipTarget ?? channelKey), !channels.isEmpty else { return }
+        jump(to: channels[(i + step + channels.count) % channels.count], after: 0.45)
+    }
+
+    private func jump(to ch: LiveChannel, after delay: Double) {
+        flipTarget = ch.key
+        flipTo = ch
+        bug = nil
+        paused = false
+        player.pause()
+        flipTask?.cancel()
+        flipTask = Task {
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            guard !Task.isCancelled else { return }
+            flipTarget = nil
+            await tune(ch.key) { [weak self] _ in if let self, self.flipTarget == nil { self.flipTo = nil } }
+        }
+    }
+
+    /// Click: the now/next card again (without the hosts repeating themselves), or put it away.
+    private func info() {
+        if bug != nil, bug?.startsAt == nil { bug = nil; return }
+        guard bug == nil, var b = lastBug else { return }
+        b.host = nil
+        bug = b
+        Task { try? await Task.sleep(for: .seconds(6)); if self.bug == b { self.bug = nil } }
+    }
+
+    /// The strip closes itself after a while without a press.
+    private func holdStrip() {
+        stripTask?.cancel()
+        stripTask = Task { try? await Task.sleep(for: .seconds(8)); if !Task.isCancelled { stripAt = nil } }
     }
 
     // MARK: subtitles (server: subtitles.py)
@@ -467,28 +529,9 @@ private struct PlayerController: UIViewControllerRepresentable {
         #else
         // Swipe down while watching: a Subtitles menu next to Apple's own audio/subtitle controls.
         let pb = playback
-        var menus: [UIMenuElement] = [UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), children: [
+        let menus: [UIMenuElement] = [UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), children: [
             UIDeferredMenuElement.uncached { done in Task { @MainActor in done(await pb.subtitleMenu()) } },
         ])]
-        if pb.channelKey != nil {  // live: every channel, and up/down on the clickpad flips
-            menus.insert(UIMenu(title: "Channels", image: UIImage(systemName: "tv"), children: [
-                UIDeferredMenuElement.uncached { done in
-                    Task { @MainActor in
-                        done(pb.channels.map { ch in
-                            UIAction(title: "\(ch.number)  \(ch.name)", subtitle: ch.onNow?.label,
-                                     state: ch.key == pb.channelKey ? .on : .off) { _ in Task { await pb.tune(ch.key) } }
-                        })
-                    }
-                },
-            ]), at: 0)
-            for (press, step) in [(UIPress.PressType.upArrow, 1), (.downArrow, -1)] {
-                let g = UITapGestureRecognizer(target: context.coordinator, action: step > 0 ? #selector(Coordinator.up) : #selector(Coordinator.down))
-                g.allowedPressTypes = [NSNumber(value: press.rawValue)]
-                vc.view.addGestureRecognizer(g)
-            }
-            context.coordinator.playback = pb
-            vc.delegate = context.coordinator  // Siri Remote channel up/down while watching (skipToNextChannel)
-        }
         vc.transportBarCustomMenuItems = menus
         #endif
         // OpenSubtitles text, drawn over the picture (under the controls).
@@ -507,47 +550,8 @@ private struct PlayerController: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+    final class Coordinator: NSObject {
         var host: UIHostingController<CaptionView>?
-        weak var playback: Playback?
-        @MainActor @objc func up() { Task { await playback?.flip(1, from: "press") } }
-        @MainActor @objc func down() { Task { await playback?.flip(-1, from: "press") } }
-        #if os(tvOS)
-        func playerViewController(_ vc: AVPlayerViewController, skipToNextChannel completion: @escaping (Bool) -> Void) {
-            Task { @MainActor in completion(await playback?.flip(1, from: "channel") ?? false) }
-        }
-        func playerViewController(_ vc: AVPlayerViewController, skipToPreviousChannel completion: @escaping (Bool) -> Void) {
-            Task { @MainActor in completion(await playback?.flip(-1, from: "channel") ?? false) }
-        }
-        func nextChannelInterstitialViewController(for vc: AVPlayerViewController) -> UIViewController { card(1) }
-        func previousChannelInterstitialViewController(for vc: AVPlayerViewController) -> UIViewController { card(-1) }
-        /// Fills the screen while the next channel loads: static and its number and name.
-        private func card(_ step: Int) -> UIViewController {
-            MainActor.assumeIsolated {
-                let h = UIHostingController(rootView: ChannelCard(channel: playback?.peek(step)))
-                h.view.backgroundColor = .black
-                return h
-            }
-        }
-        #endif
-    }
-
-    /// Between channels: static, with the number and name of the channel coming up.
-    struct ChannelCard: View {
-        var channel: LiveChannel?
-        var body: some View {
-            ZStack {
-                StaticNoise().opacity(0.6)
-                if let channel {
-                    VStack(spacing: 12) {
-                        Text("\(channel.number)").font(.system(size: 140, weight: .black, design: .monospaced)).foregroundStyle(Color(hex: 0xFFD54A))
-                        Text(channel.name.uppercased()).font(.system(size: 50, weight: .black, design: .monospaced)).foregroundStyle(.white)
-                    }
-                    .shadow(color: .black, radius: 8)
-                }
-            }
-            .ignoresSafeArea()
-        }
     }
 }
 
