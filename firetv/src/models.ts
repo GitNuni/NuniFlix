@@ -225,7 +225,7 @@ export interface LiveProgram {
   overview?: string;
   start: number; // unix seconds
   end: number;
-  slotEnd: number;
+  slot_end: number;
 }
 
 export interface LiveChannel {
@@ -267,7 +267,7 @@ export interface LiveTune {
 }
 
 export const programLabel = (p: LiveProgram) => (p.show ? `${p.show}: ${p.title ?? ''}` : p.title ?? '');
-export const onNow = (ch: LiveChannel, now = Date.now() / 1000) => ch.programs.find((p) => p.slotEnd > now);
+export const onNow = (ch: LiveChannel, now = Date.now() / 1000) => ch.programs.find((p) => p.slot_end > now);
 /** The viewer's offset from UTC in minutes (east positive), for takeover days and the host's mood. */
 export const liveTZ = () => String(-new Date().getTimezoneOffset());
 

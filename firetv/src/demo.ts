@@ -32,12 +32,12 @@ const provider = {id: '0', name: 'Open Movies'};
 function program(now: number): LiveProgram {
   const start = Math.floor(now / BBB_LENGTH) * BBB_LENGTH;
   const m = movies[0];
-  return {id: 'bbb', kind: 'movie', ext: m.id, tmdb: m.tmdb, title: m.title, overview: m.overview, start, end: start + BBB_LENGTH, slotEnd: start + BBB_LENGTH};
+  return {id: 'bbb', kind: 'movie', ext: m.id, tmdb: m.tmdb, title: m.title, overview: m.overview, start, end: start + BBB_LENGTH, slot_end: start + BBB_LENGTH};
 }
 
 function channel(now: number): LiveChannel {
   const p = program(now);
-  const next = {...p, start: p.end, end: p.end + BBB_LENGTH, slotEnd: p.end + BBB_LENGTH};
+  const next = {...p, start: p.end, end: p.end + BBB_LENGTH, slot_end: p.end + BBB_LENGTH};
   return {key: 'open', number: 1, name: 'Open Movies', tagline: 'Bunnies, all day', kind: 'movie', programs: [p, next]};
 }
 
