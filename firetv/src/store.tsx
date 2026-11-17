@@ -1,6 +1,6 @@
 // Which server, who's signed in, the theme, and the screen stack. Mirrors apple/Sources/Core/AppModel.swift.
 import React, {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
-import AsyncStorage from '@amazon-devices/react-native-async-storage__async-storage';
+import AsyncStorage from './platform/storage';
 import {api, ApiError} from './api';
 import {DEMO} from './demo';
 import {AuthOptions, Item, LiveChannel, Me, PlayItem, PlexProfile, Provider, Shelf} from './models';

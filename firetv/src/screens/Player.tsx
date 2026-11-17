@@ -7,12 +7,11 @@
 // 30 s; Up/Down show where you are (on Live TV they change channel); Back leaves.
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {ActivityIndicator, BackHandler, StyleSheet, Text, View} from 'react-native';
-import {useTVEventHandler} from '@amazon-devices/react-native-kepler';
-import {KeplerVideoSurfaceView, VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
+import {useTVEventHandler} from '../platform/tv';
+import {Media, VideoSurface} from '../player/Video';
 import {api, errorText, serverURL} from '../api';
 import {clock, episodeCode, HostSays, hm, LiveChannel, LiveProgram, LiveTune, liveTZ, PlayItem, programLabel, StreamStart} from '../models';
 import {useStore} from '../store';
-import {Hls} from '../player/hls';
 import {log} from '../log';
 import {Button, C, Picture} from '../components/ui';
 import {G, HostCard} from './Live';
@@ -50,9 +49,7 @@ export function PlayerScreen({title, queue, at, live}: {
   const [bug, setBug] = useState<Bug | null>(null);
   const [, setTick] = useState(0); // re-renders twice a second: the clock, the ident's countdown
 
-  const player = useRef<VideoPlayer | null>(null);
-  const surface = useRef<string | null>(null);
-  const engine = useRef<Hls | null>(null);
+  const media = useRef<Media | null>(null);
   const session = useRef<string | null>(null);
   const holdAt = useRef<number | null>(null); // until playback reaches the resume point, report that instead of 0:00
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,7 +61,7 @@ export function PlayerScreen({title, queue, at, live}: {
   const tuneSeq = useRef(0);
   const current = queue[index];
 
-  const now = () => player.current?.currentTime ?? 0;
+  const now = () => media.current?.currentTime ?? 0;
 
   const poke = useCallback((stay?: boolean) => {
     setControls(true);
@@ -78,7 +75,7 @@ export function PlayerScreen({title, queue, at, live}: {
       if (!sid) return Promise.resolve();
       if (state === 'stopped') session.current = null;
       const pos = holdAt.current ?? now();
-      return api.post('/play/progress', {session: sid, position: pos, duration: engine.current?.duration || duration, state}).then(
+      return api.post('/play/progress', {session: sid, position: pos, duration: media.current?.duration || duration, state}).then(
         () => {},
         () => {},
       );
@@ -87,24 +84,18 @@ export function PlayerScreen({title, queue, at, live}: {
   );
 
   const stopStream = useCallback(async () => {
-    engine.current?.destroy();
-    engine.current = null;
+    media.current?.stop();
     await report('stopped');
   }, [report]);
 
   /** Plays a started stream from `from` seconds. */
   const attach = useCallback(async (s: StreamStart, from: number, isCurrent: () => boolean) => {
-    const vp = player.current;
-    if (!vp) return;
+    const m = media.current;
+    if (!m) return;
     session.current = s.session;
-    const hls = new Hls(vp, serverURL(s.url));
-    hls.onLog = (m) => log('hls', m);
-    hls.onError = (m) => isCurrent() && setError(m);
-    engine.current = hls;
-    await hls.start(from);
-    if (closed.current || engine.current !== hls || !isCurrent()) return;
-    if (hls.duration) setDuration(hls.duration);
-    await vp.play();
+    await m.load(serverURL(s.url), from);
+    if (closed.current || !isCurrent()) return;
+    if (m.duration) setDuration(m.duration);
   }, []);
 
   /** Starts one movie/episode at `from` seconds. */
@@ -144,9 +135,6 @@ export function PlayerScreen({title, queue, at, live}: {
       setBug(null);
       setHeading(ch ? `${ch.number}  ${ch.name}` : title);
       setSubheading('');
-      try {
-        player.current?.pause();
-      } catch {}
       stopStream(); // don't wait for it
       const asked = Date.now();
       let t: LiveTune;
@@ -214,54 +202,45 @@ export function PlayerScreen({title, queue, at, live}: {
   const close = useCallback(() => {
     if (closed.current) return;
     closed.current = true;
-    try {
-      player.current?.pause();
-    } catch {}
     stopStream();
     store.pop();
   }, [stopStream, store]);
 
-  // the player: created once, given the screen surface when it's there
-  useEffect(() => {
-    const vp = new VideoPlayer();
-    let alive = true;
-    vp.initialize().then(() => {
-      if (!alive) return;
-      player.current = vp;
-      vp.autoplay = false;
-      if (surface.current) vp.setSurfaceHandle(surface.current);
-      vp.addEventListener('waiting', () => setWaiting(true));
-      vp.addEventListener('playing', () => {
-        setWaiting(false);
-        setPaused(false);
-      });
-      vp.addEventListener('canplay', () => setWaiting(false));
-      vp.addEventListener('pause', () => setPaused(true));
-      vp.addEventListener('play', () => setPaused(false));
-      vp.addEventListener('error', () => {
-        log('video error', (vp as any).error?.message ?? '');
-        setError('The video wouldn’t play.');
-      });
-      vp.addEventListener('ended', () => {
-        if (live) tune(channel.current); // whatever the channel shows next
-        else setIndex((i) => i + 1);
-      });
-      if (live) tune(live.key);
-      else begin(queue[0], at);
-    });
-    return () => {
-      alive = false;
-      closed.current = true;
-      engine.current?.destroy();
-      if (session.current) report('stopped');
-      try {
-        vp.pause();
-        vp.deinitialize();
-      } catch {}
-      player.current = null;
-    };
+  // the picture: the platform's player says when it's ready, and what it's doing
+  const ready = useCallback((m: Media) => {
+    media.current = m;
+    if (live) tune(live.key);
+    else begin(queue[0], at);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const onMedia = useCallback(
+    (e: string, message?: string) => {
+      if (e === 'waiting') setWaiting(true);
+      else if (e === 'playing') {
+        setWaiting(false);
+        setPaused(false);
+      } else if (e === 'paused') setPaused(true);
+      else if (e === 'error') {
+        log('video error', message ?? '');
+        setError(message || 'The video wouldn’t play.');
+      } else if (e === 'ended') {
+        if (live) tune(channel.current); // whatever the channel shows next
+        else setIndex((i) => i + 1);
+      }
+    },
+    [live, tune],
+  );
+
+  useEffect(
+    () => () => {
+      closed.current = true;
+      media.current?.stop();
+      if (session.current) report('stopped');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   // the next episode when one ends, or close at the end of the queue
   const first = useRef(true);
@@ -316,22 +295,24 @@ export function PlayerScreen({title, queue, at, live}: {
   }, [close, poke]);
 
   const togglePause = useCallback(() => {
-    const vp = player.current;
-    if (!vp) return;
-    if (vp.paused) {
-      vp.play();
+    const m = media.current;
+    if (!m) return;
+    if (m.paused) {
+      m.play();
+      setPaused(false);
       poke();
     } else {
-      vp.pause();
+      m.pause();
+      setPaused(true);
       poke(true);
     }
-    report(vp.paused ? 'paused' : 'playing');
+    report(m.paused ? 'paused' : 'playing');
   }, [poke, report]);
 
   /** Skips add up while the button keeps being pressed; the jump happens once the presses stop. */
   const skip = useCallback(
     (by: number) => {
-      const total = engine.current?.duration || duration;
+      const total = media.current?.duration || duration;
       const from = pendingRef.current ?? now();
       const to = Math.max(0, total ? Math.min(total - 2, from + by) : from + by);
       pendingRef.current = to;
@@ -344,7 +325,7 @@ export function PlayerScreen({title, queue, at, live}: {
         setPending(null);
         if (target == null) return;
         holdAt.current = null;
-        engine.current?.seek(target);
+        media.current?.seek(target);
         setPosition(target);
         poke();
       }, 700);
@@ -356,6 +337,7 @@ export function PlayerScreen({title, queue, at, live}: {
     if (evt.eventKeyAction === 1 || error) return; // key-up
     switch (evt.eventType) {
       case 'playpause':
+      case 'playPause': // Android
       case 'pause':
       case 'select':
         togglePause();
@@ -372,6 +354,7 @@ export function PlayerScreen({title, queue, at, live}: {
         break;
       case 'forward':
       case 'fastforward':
+      case 'fastForward': // Android
       case 'skip_forward':
         skip(30);
         break;
@@ -393,23 +376,13 @@ export function PlayerScreen({title, queue, at, live}: {
   });
 
   const shown = pending ?? position;
-  const total = engine.current?.duration || duration;
+  const total = media.current?.duration || duration;
   const pct = total ? Math.min(100, (shown / total) * 100) : 0;
   const secondsNow = Date.now() / 1000;
 
   return (
     <View style={{flex: 1, backgroundColor: '#000000'}}>
-      <KeplerVideoSurfaceView
-        style={StyleSheet.absoluteFill}
-        onSurfaceViewCreated={(h: string) => {
-          surface.current = h;
-          player.current?.setSurfaceHandle(h);
-        }}
-        onSurfaceViewDestroyed={(h: string) => {
-          surface.current = null;
-          player.current?.clearSurfaceHandle(h);
-        }}
-      />
+      <VideoSurface onReady={ready} onEvent={onMedia} />
       {waiting && !error && !bug?.startsAt ? (
         <View style={[StyleSheet.absoluteFill, {justifyContent: 'center', alignItems: 'center'}]}>
           <ActivityIndicator size="large" color="#FFFFFF" />
