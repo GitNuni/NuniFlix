@@ -1,0 +1,33 @@
+{
+  "name": "nuniflix-fireos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NuniFlix for older (Android-based) Fire TVs. Shares ../src with the Vega app.",
+  "scripts": {
+    "start": "react-native start",
+    "typecheck": "tsc --noEmit -p .",
+    "apk": "cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "qrcode-generator": "1.4.4",
+    "react": "19.2.0",
+    "react-native": "npm:react-native-tvos@0.83.10-1",
+    "react-native-video": "6.19.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@babel/preset-env": "^7.25.3",
+    "@babel/runtime": "^7.25.0",
+    "@react-native-community/cli": "20.0.0",
+    "@react-native-community/cli-platform-android": "20.0.0",
+    "@react-native/babel-preset": "0.83.0",
+    "@react-native/metro-config": "0.83.0",
+    "@react-native/typescript-config": "0.83.0",
+    "@types/react": "^19.2.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

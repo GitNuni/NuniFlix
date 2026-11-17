@@ -360,11 +360,13 @@ export function PlayerScreen({title, queue, at, live}: {
         break;
       case 'up':
       case 'channel_up':
+      case 'channelUp': // Android
         if (live) flip(1);
         else poke();
         break;
       case 'down':
       case 'channel_down':
+      case 'channelDown': // Android
         if (live) flip(-1);
         else poke();
         break;

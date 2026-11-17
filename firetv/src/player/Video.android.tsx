@@ -1,6 +1,6 @@
 // Android / Fire OS: react-native-video (ExoPlayer) plays the server's HLS directly. Same interface as Video.tsx.
 import React, {useEffect, useRef, useState} from 'react';
-import {StyleSheet} from 'react-native';
+import {StyleSheet, View} from 'react-native';
 import Video, {VideoRef} from 'react-native-video';
 import type {Media, MediaEvent} from './Video';
 
@@ -56,30 +56,45 @@ export function VideoSurface({onReady, onEvent}: {onReady: (m: Media) => void; o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!src) return null;
+  // Android only delivers remote presses to the app while something has focus, and the player has no buttons:
+  // this invisible view holds focus so play/pause, skip and Back reach the player screen.
   return (
-    <Video
-      ref={ref}
-      source={{uri: src.uri, startPosition: src.startPosition}}
-      style={StyleSheet.absoluteFill}
-      resizeMode="contain"
-      paused={paused}
-      controls={false}
-      progressUpdateInterval={500}
-      onLoad={(d) => {
-        state.current.duration = d.duration;
-        state.current.loaded?.();
-        state.current.loaded = null;
-      }}
-      onProgress={(p) => (state.current.time = p.currentTime)}
-      onBuffer={({isBuffering}) => events.current(isBuffering ? 'waiting' : 'playing')}
-      onPlaybackStateChanged={({isPlaying}) => events.current(isPlaying ? 'playing' : state.current.paused ? 'paused' : 'waiting')}
-      onEnd={() => events.current('ended')}
-      onError={(e) => {
-        events.current('error', e.error?.errorString ?? 'The video wouldn’t play.');
-        state.current.loaded?.();
-        state.current.loaded = null;
-      }}
-    />
+    <>
+      {src ? (
+        <Video
+          ref={ref}
+          source={{uri: src.uri, startPosition: src.startPosition}}
+          style={StyleSheet.absoluteFill}
+          resizeMode="contain"
+          paused={paused}
+          controls={false}
+          progressUpdateInterval={500}
+          onLoad={(d) => {
+            state.current.duration = d.duration;
+            state.current.loaded?.();
+            state.current.loaded = null;
+          }}
+          onProgress={(p) => (state.current.time = p.currentTime)}
+          onBuffer={({isBuffering}) => events.current(isBuffering ? 'waiting' : 'playing')}
+          onPlaybackStateChanged={({isPlaying}) => events.current(isPlaying ? 'playing' : state.current.paused ? 'paused' : 'waiting')}
+          onEnd={() => events.current('ended')}
+          onError={(e) => {
+            events.current('error', plain(e.error?.errorString ?? e.error?.errorCode));
+            state.current.loaded?.();
+            state.current.loaded = null;
+          }}
+        />
+      ) : null}
+      <View focusable hasTVPreferredFocus style={StyleSheet.absoluteFill} />
+    </>
   );
+}
+
+/** ExoPlayer's error codes, in words. */
+function plain(code?: string): string {
+  const c = code ?? '';
+  if (/NETWORK|TIMEOUT|UNKNOWN_HOST/i.test(c)) return "Can't reach the video. Check the Fire TV's internet connection and try again.";
+  if (/BAD_HTTP_STATUS|FILE_NOT_FOUND/i.test(c)) return 'The server stopped sending the video. Try again in a moment.';
+  if (/DECOD|FORMAT|PARSING/i.test(c)) return "This Fire TV can't play that video format.";
+  return 'The video wouldn’t play.';
 }
