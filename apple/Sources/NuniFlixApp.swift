@@ -75,7 +75,6 @@ struct MainView: View {
                     case .yourflix: YourFlixView()
                     case .seasonal: SeasonalPage()
                     case .shelf(let s): ShelfPage(shelf: s)
-                    case .office: OfficeView()
                     case .live: LiveGuideView()
                     case .library(let genre): LibraryPage(genre: genre)
                     case .libraryAll(let title, let q): BrowseGridView(provider: nil, title: title, query: q)
@@ -84,8 +83,7 @@ struct MainView: View {
         }
         .task { await model.loadMe() }
         #if DEBUG
-        .onAppear { if ProcessInfo.processInfo.environment["NF_ROUTE"] == "office" { path.append(Route.office) }
-                              if ProcessInfo.processInfo.environment["NF_ROUTE"] == "live" { path.append(Route.live) }
+        .onAppear { if ProcessInfo.processInfo.environment["NF_ROUTE"] == "live" { path.append(Route.live) }
                               if let r = ProcessInfo.processInfo.environment["NF_ROUTE"], r.hasPrefix("shelf:") {
                                   let k = String(r.dropFirst(6)); path.append(Route.shelf(Shelf(key: k, title: k.capitalized, art: "/shelves/\(k).png"))) }
                               #if os(tvOS)

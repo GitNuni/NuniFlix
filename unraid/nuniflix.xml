@@ -11,7 +11,7 @@
   <Category>MediaServer:Video Tools:</Category>
   <WebUI>http://[IP]:[PORT:8000]/</WebUI>
   <Icon>https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/overseerr.png</Icon>
-  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <ExtraParams>--restart unless-stopped --memory=1g --memory-swap=1g --cpus=2 --pids-limit=256 --log-opt max-size=10m --log-opt max-file=3</ExtraParams>
   <Config Name="Web UI port" Target="8000" Default="8095" Mode="tcp" Description="The port you open NuniFlix on." Type="Port" Display="always" Required="true" Mask="false">8095</Config>
   <Config Name="Data" Target="/data" Default="/mnt/user/appdata/nuniflix" Mode="rw" Description="Settings, accounts and the database. Back this up." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/nuniflix</Config>
 </Container>

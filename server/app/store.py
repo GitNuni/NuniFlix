@@ -39,8 +39,6 @@ DEFAULTS = {
     "brand": "Nuni",  # the first half of the app's name: "Nuni" + "Flix". A friend running their own can make it "Max" -> MaxFlix
     "home_off": [],  # Home sections the owner turned off for everyone (on top of each person's own layout)
     "show_requester": True,  # posters show the first name of whoever asked for it
-    "office_on": True,  # the Office: a live building of what's playing, downloading and being searched for
-    "office_names": True,  # everyone sees who's watching what in the Office (off: "someone"; admins always see everything)
     "swipe_on": True,  # Swipe (trailers, right to request) for everyone the owner allows
     "match_on": True,  # Movie Match links (swipe the owner's library with someone)
     # Discord only opens accounts that already have a Plex or Jellyfin sign-in (so it's someone with access to the owner's server)
@@ -413,9 +411,9 @@ def perms(u):
     return {**PERM_DEFAULTS, **json.loads(u.get("perms") or "{}")}
 
 
-HOME_ROWS = ("featured", "requests", "office", "live", "discover", "foryou", "movies", "tv", "trending", "theaters", "popular", "upcoming",
+HOME_ROWS = ("featured", "requests", "live", "discover", "foryou", "movies", "tv", "trending", "theaters", "popular", "upcoming",
              "genres", "shelves", "streaming")
-HOME_DEFAULT = ["featured", "requests", "office", "live", "movies", "tv", "shelves", "streaming", "trending", "discover", "theaters", "popular", "upcoming", "genres"]
+HOME_DEFAULT = ["featured", "requests", "live", "movies", "tv", "shelves", "streaming", "trending", "discover", "theaters", "popular", "upcoming", "genres"]
 HOME_V3 = ["theaters", "popular", "upcoming", "genres"]  # the "find something new" rows
 
 
@@ -425,14 +423,12 @@ def prefs(u):
         p["home"] = ["featured", *p["home"]]
     if p.get("home_v", 1) < 3:  # layouts saved before the browse rows existed get them at the end
         p["home"] = [*p["home"], *[k for k in HOME_V3 if k not in p["home"]]]
-    if p.get("home_v", 1) < 4 and "office" not in p["home"]:  # the Office card goes right under the banner
+    if p.get("home_v", 1) < 5 and "live" not in p["home"]:  # Live TV goes under the banner
         at = p["home"].index("featured") + 1 if "featured" in p["home"] else 0
-        p["home"] = [*p["home"][:at], "office", *p["home"][at:]]
-    if p.get("home_v", 1) < 5 and "live" not in p["home"]:  # Live TV goes under the Office card
-        at = p["home"].index("office") + 1 if "office" in p["home"] else 0
         p["home"] = [*p["home"][:at], "live", *p["home"][at:]]
     if p.get("home_v", 1) < 6:  # the sectioned Home: Seasonal genres (shelves) and the Streaming services join in
         p["home"] = [*p["home"], *[k for k in ("shelves", "streaming") if k not in p["home"]]]
+    p["home"] = [k for k in p["home"] if k in HOME_ROWS]  # drops rows that no longer exist (the Office)
     return p
 
 

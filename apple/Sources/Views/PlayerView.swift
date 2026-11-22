@@ -281,6 +281,7 @@ final class Playback: ObservableObject {
     private var flipTask: Task<Void, Never>?
     private var stripTask: Task<Void, Never>?
     private var lastBug: LiveBug?
+    private var pausedAt: Date?
 
     /// One press, click or swipe. Returns false when Back should close the player.
     func key(_ k: LiveKey) -> Bool {
@@ -304,7 +305,11 @@ final class Playback: ObservableObject {
             if stripAt != nil { stripAt = nil } else if bug != nil, bug?.startsAt == nil { bug = nil } else { return false }
         case .playPause:
             guard player.currentItem != nil else { break }
-            if player.rate == 0 { player.play(); paused = false } else { player.pause(); paused = true }
+            if player.rate != 0 { player.pause(); paused = true; pausedAt = Date(); break }
+            paused = false
+            // paused a long while: the server has let the stream go (player.py LIVE_IDLE), so rejoin the channel live
+            if let at = pausedAt, Date().timeIntervalSince(at) > 5 * 60, let key = channelKey { Task { await tune(key) } } else { player.play() }
+            pausedAt = nil
         }
         return true
     }

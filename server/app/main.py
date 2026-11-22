@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 import random
 
-import accounts, apns, arr, channels, history, library, media, notify, office, player, seasonal, shelves, store, subtitles, tmdb
+import accounts, apns, arr, channels, history, library, media, notify, player, seasonal, shelves, store, subtitles, tmdb
 
 VERSION = "0.4.0"
 COOKIE = "nf_token"
@@ -484,7 +484,7 @@ def me(user=Depends(current_user)):
         "has4k": {"movie": arr.has("radarr4k"), "tv": arr.has("sonarr4k")},
         "prefs": store.prefs(user),
         "features": {"swipe": feature(user, "swipe"), "match": feature(user, "match")},
-        "home_off": store.config()["home_off"] + ([] if store.config()["office_on"] else ["office"]),
+        "home_off": store.config()["home_off"],
     }
 
 
@@ -1509,6 +1509,10 @@ def _watcher():
                 print("watcher (tidy):", type(e).__name__, e, flush=True)
         tick += 1
         try:
+            player.sweep()
+        except Exception as e:
+            print("watcher (streams):", type(e).__name__, e, flush=True)
+        try:
             check_added()
         except Exception as e:
             print("watcher (added):", type(e).__name__, e, flush=True)
@@ -1683,8 +1687,6 @@ class Settings(BaseModel):
     fluxer_needs_link: Optional[bool] = None
     home_off: Optional[list[str]] = Field(None, max_length=20)
     show_requester: Optional[bool] = None
-    office_on: Optional[bool] = None
-    office_names: Optional[bool] = None
     subtitles: Optional[dict] = None
     apns: Optional[dict] = None
 
@@ -1700,7 +1702,7 @@ EDITABLE = {"radarr": {"url", "key", "profile", "root", "availability"},
             "quotas": {"movie_limit", "movie_days", "tv_limit", "tv_days"},
             "subtitles": {"source", "key", "username", "secret", "language"},
             "apns": {"key", "key_id", "team_id", "topic"}}
-FLAGS = ("jellyfin_login", "plex_login", "discord_login", "fluxer_login", "fluxer_needs_link", "auto_approve", "auto_next", "swipe_on", "match_on", "discord_needs_link", "show_requester", "office_on", "office_names")
+FLAGS = ("jellyfin_login", "plex_login", "discord_login", "fluxer_login", "fluxer_needs_link", "auto_approve", "auto_next", "swipe_on", "match_on", "discord_needs_link", "show_requester")
 
 
 HOOK_RE = re.compile(r"^https?://[^\s'\"<>]+/webhooks?/[^\s'\"<>]+$")
@@ -1865,41 +1867,6 @@ def setup_needed():
 @app.on_event("startup")
 def start_watcher():
     threading.Thread(target=_watcher, daemon=True, name="watcher").start()
-    threading.Thread(target=_office_watch, daemon=True, name="office").start()
-
-
-def _office_watch():
-    """Keeps the Office's log going (who started watching, what finished downloading) even when nobody has it open."""
-    while True:
-        time.sleep(2)
-        try:
-            if store.config()["office_on"] and not setup_needed():
-                office.refresh()
-        except Exception as e:  # never let a hiccup stop the loop
-            print("office:", e, flush=True)
-
-
-# ---------- the Office ----------
-@app.get("/api/office")
-def get_office(demo: bool = False, user=Depends(current_user)):
-    """The live building. Admins can ask for a made-up busy one (demo) to see every room in use."""
-    if not store.config()["office_on"] and not store.is_admin(user):
-        raise HTTPException(404, "The Office is closed.")
-    if demo and store.is_admin(user):
-        return office.demo(user)
-    return office.view(user)
-
-
-@app.get("/api/office/art/{aid}", include_in_schema=False)
-def office_art(aid: str = Path(pattern=r"^[\w-]{6,20}$")):
-    """No sign-in (the Apple TV loads images without one): ids are random and only handed to people allowed to see them."""
-    try:
-        hit = office.art(aid)
-    except httpx.HTTPError:
-        hit = None
-    if not hit:
-        raise HTTPException(404)
-    return Response(hit[0], media_type=hit[1], headers={"Cache-Control": "private, max-age=600"})
 
 
 @app.on_event("startup")
@@ -2079,9 +2046,7 @@ async def fresh_app(request: Request, call_next):
     """Phones (especially home-screen apps) hold on to old copies of the page; make them check for a new one."""
     resp = await call_next(request)
     path = request.url.path
-    if path.startswith("/office/"):  # the Office's pictures: every link carries ?v=, so they can be kept for good
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif not path.startswith("/api/") and path.endswith(("/", ".html", ".js", ".webmanifest")):
+    if not path.startswith("/api/") and path.endswith(("/", ".html", ".js", ".webmanifest")):
         resp.headers["Cache-Control"] = "no-cache"
     return resp
 

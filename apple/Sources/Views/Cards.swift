@@ -207,7 +207,6 @@ enum Route: Hashable {
     case yourflix
     case seasonal
     case shelf(Shelf)                                   // Kids, Christmas, Horror…
-    case office
     case live
 }
 

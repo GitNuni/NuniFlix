@@ -22,6 +22,7 @@ Start it, open the container's **log** and copy the one-time **setup code**, the
 
 ```sh
 docker run -d --name nuniflix --restart unless-stopped \
+  --memory=1g --memory-swap=1g --cpus=2 --pids-limit=256 --log-opt max-size=10m --log-opt max-file=3 \
   -p 8095:8000 -v /path/to/nuniflix-data:/data \
   ghcr.io/gitnuni/nuniflix:latest
 docker logs nuniflix   # the setup code is in here

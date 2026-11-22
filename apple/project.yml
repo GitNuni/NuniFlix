@@ -30,7 +30,7 @@ targets:
       properties:
         CFBundleDisplayName: NuniFlix
         UILaunchScreen: {}
-        UIAppFonts: [PressStart2P-Regular.ttf, PixelifySans.ttf, Silkscreen-Regular.ttf, Silkscreen-Bold.ttf]   # Pixel theme + HQ signs (Resources/TV/Fonts, OFL)
+        UIAppFonts: [PressStart2P-Regular.ttf, PixelifySans.ttf]   # Pixel theme (Resources/TV/Fonts, OFL)
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true   # home servers are often plain http://192.168.x.x
         LSApplicationQueriesSchemes: [plex]

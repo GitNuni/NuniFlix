@@ -2,7 +2,7 @@
 through NuniFlix.
 
 Why as them: they only see libraries the owner shares with them, and their watch history, resume points and "who's
-watching" (the Office) stay theirs. Their token comes from signing in (store.media_tokens).
+watching" stay theirs. Their token comes from signing in (store.media_tokens).
 
 Why through NuniFlix: it works wherever NuniFlix is reachable (Plex/Jellyfin are often LAN-only addresses), and their
 Plex/Jellyfin token never reaches the device. The player can't add our sign-in header to every video segment, so a
@@ -15,7 +15,8 @@ import httpx
 
 import accounts, arr, media, store
 
-STREAM_IDLE = 3 * 3600
+STREAM_IDLE = 3600       # a paused film keeps its stream this long
+LIVE_IDLE = 10 * 60      # live channels: a player that stopped asking has gone (flipped, slept, closed)
 MAX_STREAMS = 4  # per person; starting another ends their oldest
 _http = httpx.Client(timeout=15, headers={"Accept": "application/json"})
 _pipe = httpx.Client(timeout=httpx.Timeout(90, connect=10))  # segments can take a while while the transcoder catches up
@@ -352,9 +353,15 @@ def _end(s):
     threading.Thread(target=_stop_transcode, args=(s,), daemon=True).start()
 
 
+def sweep():
+    """End streams nobody is watching any more, so Plex/Jellyfin stop transcoding them (main.py calls it every 2 min)."""
+    with _lock:
+        _sweep()
+
+
 def _sweep():
     now = time.time()
-    for s in [s for s in _streams.values() if now - s["seen"] > STREAM_IDLE]:
+    for s in [s for s in _streams.values() if now - s["seen"] > (LIVE_IDLE if s["live"] else STREAM_IDLE)]:
         _end(s)
 
 
